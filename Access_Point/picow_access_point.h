@@ -9,6 +9,10 @@
 	<h2>LED:</h2>\
 	<p>LED is %s</p>\
 	<p><a href=\"?led=%d\">Turn LED %s</a>\
+	<h2>IMU:</h2>\
+	<p>A<sub>x</sub> = m/s</p>\
+	<p>A<sub>y</sub> = m/s</p>\
+	<p>A<sub>z</sub> = m/s</p>\
 	</body>\
 	</html>"
 
