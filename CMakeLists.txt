@@ -14,6 +14,7 @@ pico_sdk_init()
 
 # Add multi example
 add_subdirectory(Blink)
+add_subdirectory(Access_Point)
 
 add_compile_options(-Wall
         -Wno-format          # int != int32_t as far as the compiler is concerned because gcc has int32_t as long int
