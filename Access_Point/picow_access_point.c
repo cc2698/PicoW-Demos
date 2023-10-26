@@ -4,45 +4,24 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
+// Header file
+#include "picow_access_point.h"
+
+// Standard C libraries
 #include <string.h>
 
+// Standard Pico-W libraries
 #include "pico/cyw43_arch.h"
 #include "pico/stdlib.h"
 
+// Lightweight IP
 #include "lwip/pbuf.h"
-#include "lwip/tcp.h"
 
+// DHCP and DNS
 #include "dhcpserver.h"
 #include "dnsserver.h"
 
-#define TCP_PORT 80
-#define DEBUG_printf printf
-#define POLL_TIME_S 5
-#define HTTP_GET "GET"
-#define HTTP_RESPONSE_HEADERS "HTTP/1.1 %d OK\nContent-Length: %d\nContent-Type: text/html; charset=utf-8\nConnection: close\n\n"
-#define LED_TEST_BODY "<html><body><h1>Hello from Pico W.</h1><p>Led is %s</p><p><a href=\"?led=%d\">Turn led %s</a></body></html>"
-#define LED_PARAM "led=%d"
-#define LED_TEST "/ledtest"
-#define LED_GPIO 0
-#define HTTP_RESPONSE_REDIRECT "HTTP/1.1 302 Redirect\nLocation: http://%s" LED_TEST "\n\n"
-
-typedef struct TCP_SERVER_T_ {
-    struct tcp_pcb *server_pcb;
-    bool complete;
-    ip_addr_t gw;
-} TCP_SERVER_T;
-
-typedef struct TCP_CONNECT_STATE_T_ {
-    struct tcp_pcb *pcb;
-    int sent_len;
-    char headers[128];
-    char result[256];
-    int header_len;
-    int result_len;
-    ip_addr_t *gw;
-} TCP_CONNECT_STATE_T;
-
-static err_t tcp_close_client_connection(TCP_CONNECT_STATE_T *con_state, struct tcp_pcb *client_pcb, err_t close_err) {
+err_t tcp_close_client_connection(TCP_CONNECT_STATE_T *con_state, struct tcp_pcb *client_pcb, err_t close_err) {
     if (client_pcb) {
         assert(con_state && con_state->pcb == client_pcb);
         tcp_arg(client_pcb, NULL);
@@ -63,7 +42,7 @@ static err_t tcp_close_client_connection(TCP_CONNECT_STATE_T *con_state, struct 
     return close_err;
 }
 
-static void tcp_server_close(TCP_SERVER_T *state) {
+void tcp_server_close(TCP_SERVER_T *state) {
     if (state->server_pcb) {
         tcp_arg(state->server_pcb, NULL);
         tcp_close(state->server_pcb);
@@ -71,7 +50,7 @@ static void tcp_server_close(TCP_SERVER_T *state) {
     }
 }
 
-static err_t tcp_server_sent(void *arg, struct tcp_pcb *pcb, u16_t len) {
+err_t tcp_server_sent(void *arg, struct tcp_pcb *pcb, u16_t len) {
     TCP_CONNECT_STATE_T *con_state = (TCP_CONNECT_STATE_T*)arg;
     DEBUG_printf("tcp_server_sent %u\n", len);
     con_state->sent_len += len;
@@ -82,7 +61,7 @@ static err_t tcp_server_sent(void *arg, struct tcp_pcb *pcb, u16_t len) {
     return ERR_OK;
 }
 
-static int test_server_content(const char *request, const char *params, char *result, size_t max_result_len) {
+int test_server_content(const char *request, const char *params, char *result, size_t max_result_len) {
     int len = 0;
     if (strncmp(request, LED_TEST, sizeof(LED_TEST) - 1) == 0) {
         // Get the state of the led
@@ -195,13 +174,13 @@ err_t tcp_server_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
     return ERR_OK;
 }
 
-static err_t tcp_server_poll(void *arg, struct tcp_pcb *pcb) {
+err_t tcp_server_poll(void *arg, struct tcp_pcb *pcb) {
     TCP_CONNECT_STATE_T *con_state = (TCP_CONNECT_STATE_T*)arg;
     DEBUG_printf("tcp_server_poll_fn\n");
     return tcp_close_client_connection(con_state, pcb, ERR_OK); // Just disconnect clent?
 }
 
-static void tcp_server_err(void *arg, err_t err) {
+void tcp_server_err(void *arg, err_t err) {
     TCP_CONNECT_STATE_T *con_state = (TCP_CONNECT_STATE_T*)arg;
     if (err != ERR_ABRT) {
         DEBUG_printf("tcp_client_err_fn %d\n", err);
@@ -209,7 +188,7 @@ static void tcp_server_err(void *arg, err_t err) {
     }
 }
 
-static err_t tcp_server_accept(void *arg, struct tcp_pcb *client_pcb, err_t err) {
+err_t tcp_server_accept(void *arg, struct tcp_pcb *client_pcb, err_t err) {
     TCP_SERVER_T *state = (TCP_SERVER_T*)arg;
     if (err != ERR_OK || client_pcb == NULL) {
         DEBUG_printf("failure in accept\n");
@@ -236,7 +215,7 @@ static err_t tcp_server_accept(void *arg, struct tcp_pcb *client_pcb, err_t err)
     return ERR_OK;
 }
 
-static bool tcp_server_open(void *arg) {
+bool tcp_server_open(void *arg) {
     TCP_SERVER_T *state = (TCP_SERVER_T*)arg;
     DEBUG_printf("starting server on port %u\n", TCP_PORT);
 
@@ -265,66 +244,4 @@ static bool tcp_server_open(void *arg) {
     tcp_accept(state->server_pcb, tcp_server_accept);
 
     return true;
-}
-
-int main() {
-    stdio_init_all();
-
-    TCP_SERVER_T *state = calloc(1, sizeof(TCP_SERVER_T));
-    if (!state) {
-        DEBUG_printf("failed to allocate state\n");
-        return 1;
-    }
-
-    if (cyw43_arch_init()) {
-        DEBUG_printf("failed to initialise\n");
-        return 1;
-    }
-    const char *ap_name = "picow_test";
-#if 1
-    const char *password = "password";
-#else
-    const char *password = NULL;
-#endif
-
-    cyw43_arch_enable_ap_mode(ap_name, password, CYW43_AUTH_WPA2_AES_PSK);
-
-    ip4_addr_t mask;
-    IP4_ADDR(ip_2_ip4(&state->gw), 192, 168, 4, 1);
-    IP4_ADDR(ip_2_ip4(&mask), 255, 255, 255, 0);
-
-    // Start the dhcp server
-    dhcp_server_t dhcp_server;
-    dhcp_server_init(&dhcp_server, &state->gw, &mask);
-
-    // Start the dns server
-    dns_server_t dns_server;
-    dns_server_init(&dns_server, &state->gw);
-
-    if (!tcp_server_open(state)) {
-        DEBUG_printf("failed to open server\n");
-        return 1;
-    }
-
-    while(!state->complete) {
-        // the following #ifdef is only here so this same example can be used in multiple modes;
-        // you do not need it in your code
-#if PICO_CYW43_ARCH_POLL
-        // if you are using pico_cyw43_arch_poll, then you must poll periodically from your
-        // main loop (not from a timer interrupt) to check for Wi-Fi driver or lwIP work that needs to be done.
-        cyw43_arch_poll();
-        // you can poll as often as you like, however if you have nothing else to do you can
-        // choose to sleep until either a specified time, or cyw43_arch_poll() has work to do:
-        cyw43_arch_wait_for_work_until(make_timeout_time_ms(1000));
-#else
-        // if you are not using pico_cyw43_arch_poll, then Wi-FI driver and lwIP work
-        // is done via interrupt in the background. This sleep is just an example of some (blocking)
-        // work you might be doing.
-        sleep_ms(1000);
-#endif
-    }
-    dns_server_deinit(&dns_server);
-    dhcp_server_deinit(&dhcp_server);
-    cyw43_arch_deinit();
-    return 0;
 }
