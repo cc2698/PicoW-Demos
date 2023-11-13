@@ -8,7 +8,7 @@ BinPackArguments: true
 BreakBeforeBinaryOperators: NonAssignment
 ColumnLimit: 120
 FixNamespaceComments: true
-IncludeBlocks: Regroup
+IncludeBlocks: Preserve
 IndentCaseBlocks: false
 IndentCaseLabels: false
 IndentWidth: 4
