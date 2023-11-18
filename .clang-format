@@ -6,7 +6,8 @@ AlignOperands: AlignAfterOperator
 BasedOnStyle: Microsoft
 BinPackArguments: true
 BreakBeforeBinaryOperators: NonAssignment
-ColumnLimit: 120
+BreakBeforeBraces: Linux
+ColumnLimit: 80
 FixNamespaceComments: true
 IncludeBlocks: Preserve
 IndentCaseBlocks: false
