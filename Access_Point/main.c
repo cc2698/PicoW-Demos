@@ -1,16 +1,21 @@
 
 #include "picow_access_point.h"
+#include "mpu6050.h"
 
 // Standard C libraries
+#include <stdio.h>
 #include <string.h>
 
 // Standard Pico-W libraries
 #include "pico/cyw43_arch.h"
 #include "pico/stdlib.h"
+#include "hardware/i2c.h"
 
 // DHCP and DNS
 #include "dhcpserver.h"
 #include "dnsserver.h"
+
+float acceleration[3], gyro[3];
 
 int main() {
     stdio_init_all();
@@ -20,11 +25,24 @@ int main() {
         DEBUG_printf("failed to allocate state\n");
         return 1;
     }
+    printf("TCP Server state allocated!\n");
 
     if (cyw43_arch_init()) {
         DEBUG_printf("failed to initialise\n");
         return 1;
     }
+    printf("CYW43 initialized!\n");
+
+    // Reset the IMU
+    i2c_init(I2C_CHAN, I2C_BAUD_RATE) ;
+    gpio_set_function(SDA_PIN, GPIO_FUNC_I2C) ;
+    gpio_set_function(SCL_PIN, GPIO_FUNC_I2C) ;
+    gpio_pull_up(SDA_PIN) ;
+    gpio_pull_up(SCL_PIN) ;
+
+    mpu6050_reset();
+    mpu6050_read_raw(acceleration, gyro);
+
     const char *ap_name = "picow_test";
 #if 1
     const char *password = "password";
@@ -50,6 +68,7 @@ int main() {
         DEBUG_printf("failed to open server\n");
         return 1;
     }
+    printf("TCP server opened!\n");
 
     while(!state->complete) {
         // the following #ifdef is only here so this same example can be used in multiple modes;
@@ -62,9 +81,14 @@ int main() {
         // choose to sleep until either a specified time, or cyw43_arch_poll() has work to do:
         cyw43_arch_wait_for_work_until(make_timeout_time_ms(1000));
 #else
-        // if you are not using pico_cyw43_arch_poll, then Wi-FI driver and lwIP work
-        // is done via interrupt in the background. This sleep is just an example of some (blocking)
-        // work you might be doing.
+        // // if you are not using pico_cyw43_arch_poll, then Wi-FI driver and lwIP work
+        // // is done via interrupt in the background. This sleep is just an example of some (blocking)
+        // // work you might be doing.
+        // sleep_ms(1000);
+
+        // Read the IMU
+        mpu6050_read_raw(acceleration, gyro);
+        DEBUG_printf("Ax = %f ; Ay = %f ; Az = %f\n", acceleration[0], acceleration[1], acceleration[2]);
         sleep_ms(1000);
 #endif
     }
@@ -73,4 +97,3 @@ int main() {
     cyw43_arch_deinit();
     return 0;
 }
-

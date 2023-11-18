@@ -1,11 +1,21 @@
 #ifndef PICOW_ACCESS_POINT_H
 #define PICOW_ACCESS_POINT_H
 
+/*
+* Real-time data display in python on the Pico-W
+* https://www.youtube.com/watch?v=grxjmrPT1zQ
+*
+* https://picockpit.com/raspberry-pi/raspberry-pi-pico-w-beginners-components-tutorial/#Getting_data_sent_to_your_browser
+*/
 // The HTML document being hosted on the Pico-W
 #define LED_TEST_BODY \
 	"<html>\
 	<body>\
 	<h1>Hello from Pico W.</h1>\
+	<p>Refresh: %d</p>\
+	<script>\
+    setInterval(() => location.reload(), 500)\
+	</script>\
 	<h2>LED:</h2>\
 	<p>LED is %s</p>\
 	<p><a href=\"?led=%d\">Turn LED %s</a>\

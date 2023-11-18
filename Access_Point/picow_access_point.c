@@ -21,6 +21,8 @@
 #include "dhcpserver.h"
 #include "dnsserver.h"
 
+int calls = 0;
+
 err_t tcp_close_client_connection(TCP_CONNECT_STATE_T *con_state, struct tcp_pcb *client_pcb, err_t close_err) {
     if (client_pcb) {
         assert(con_state && con_state->pcb == client_pcb);
@@ -62,6 +64,8 @@ err_t tcp_server_sent(void *arg, struct tcp_pcb *pcb, u16_t len) {
 }
 
 int test_server_content(const char *request, const char *params, char *result, size_t max_result_len) {
+    calls++;
+
     int len = 0;
     if (strncmp(request, LED_TEST, sizeof(LED_TEST) - 1) == 0) {
         // Get the state of the led
@@ -84,9 +88,9 @@ int test_server_content(const char *request, const char *params, char *result, s
         }
         // Generate result
         if (led_state) {
-            len = snprintf(result, max_result_len, LED_TEST_BODY, "ON", 0, "OFF");
+            len = snprintf(result, max_result_len, LED_TEST_BODY, calls, "ON", 0, "OFF");
         } else {
-            len = snprintf(result, max_result_len, LED_TEST_BODY, "OFF", 1, "ON");
+            len = snprintf(result, max_result_len, LED_TEST_BODY, calls, "OFF", 1, "ON");
         }
     }
     return len;

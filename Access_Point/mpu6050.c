@@ -41,7 +41,7 @@ void mpu6050_reset() {
     i2c_write_blocking(I2C_CHAN, ADDRESS, int_config, 2, false);
 }
 
-void mpu6050_read_raw(fix15 accel[3], fix15 gyro[3]) {
+void mpu6050_read_raw(float accel[3], float gyro[3]) {
     // For this particular device, we send the device the register we want to read
     // first, then subsequently read from the device. The register is auto incrementing
     // so we don't need to keep sending the register we want, just the first.
@@ -56,8 +56,7 @@ void mpu6050_read_raw(fix15 accel[3], fix15 gyro[3]) {
 
     for (int i = 0; i < 3; i++) {
         temp_accel = (buffer[i<<1] << 8 | buffer[(i<<1) + 1]);
-        accel[i] = temp_accel ;
-        accel[i] <<= 2 ; // convert to g's (fixed point)
+        accel[i] = 9.81f * (float) temp_accel / 16384.0f ;
     }
 
     // Now gyro data from reg 0x43 for 6 bytes
@@ -68,8 +67,6 @@ void mpu6050_read_raw(fix15 accel[3], fix15 gyro[3]) {
 
     for (int i = 0; i < 3; i++) {
         temp_gyro = (buffer[i<<1] << 8 | buffer[(i<<1) + 1]);
-        gyro[i] = temp_gyro ;
-        gyro[i] = multfix15(gyro[i], 500<<16) ; // deg/sec
+        gyro[i] = 500.0f * (float) temp_gyro / 65536.0f;
     }
 }
-/////////////////////////////////////////////////////////////////
