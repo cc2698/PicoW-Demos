@@ -32,7 +32,7 @@ target_sources(udp_ap PRIVATE
 		dhcpserver/dhcpserver.c
 )
 target_compile_definitions(udp_ap PRIVATE
-        AP=1
+        AP
 )
 target_include_directories(udp_ap PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
@@ -69,9 +69,6 @@ pico_enable_stdio_uart(udp_station 1)
 target_sources(udp_station PRIVATE 
 		udp_send_recv.c
 		dhcpserver/dhcpserver.c
-)
-target_compile_definitions(udp_station PRIVATE
-        AP=0
 )
 target_include_directories(udp_station PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
