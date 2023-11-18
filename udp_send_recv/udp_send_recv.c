@@ -94,7 +94,7 @@ void udpecho_raw_recv(void* arg, struct udp_pcb* upcb, struct pbuf* p,
 static struct udp_pcb* udpecho_raw_pcb;
 
 // Define the recv callback function
-void udpecho_raw_init(void)
+int udpecho_raw_init(void)
 {
     struct pbuf* p; // OMVED
     udpecho_raw_pcb = udp_new_ip_type(IPADDR_TYPE_ANY);
@@ -110,13 +110,17 @@ void udpecho_raw_init(void)
 
         if (err == ERR_OK) {
             udp_recv(udpecho_raw_pcb, udpecho_raw_recv, NULL);
-            // printf("Set up recv callback\n");
         } else {
-            printf("bind error\n");
+            printf("UDP bind error\n");
+            return 1;
         }
     } else {
         printf("ERROR: udpecho_raw_pcb was NULL\n");
+        return 1;
     }
+
+    // Success
+    return 0;
 }
 
 /*
@@ -200,7 +204,7 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
 
         // Send packet
         // cyw43_arch_lwip_begin();
-        printf("| Send:\n|\tdest: %s\n|\tmsg: %s\n", udp_target_pico,
+        printf("\n| Send:\n|\tdest: %s\n|\tmsg:  \"%s\"\n\n", udp_target_pico,
                send_data);
         err_t er = udp_sendto(pcb, p, &addr, UDP_PORT); // port
         // cyw43_arch_lwip_end();
@@ -287,7 +291,7 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         //     }
         // }
 
-        printf("| Recv:\n|\tmsg: %s\n", recv_data);
+        printf("\n| Recv:\n|\tmsg:  \"%s\"\n\n", recv_data);
 
         // PT_SEM_SIGNAL(pt, &new_udp_send_s);
 
@@ -322,10 +326,6 @@ static PT_THREAD(protothread_serial(struct pt* pt))
         // } else {
         //     sprintf(pt_serial_out_buffer, "no cmd in recv mode ");
         // }
-
-        if (access_point) {
-            sprintf(pt_serial_out_buffer, ">>> ");
-        }
 
         // Spawn a thread to do the non-blocking write
         serial_write;
@@ -517,23 +517,28 @@ int main()
     // start 'send' mode unit first!
     // ap = gpio_get(mode_sel);
     //
+
+    // Initialize Wifi chip
+    printf("Initializing cyw43...");
+    if (cyw43_arch_init()) {
+        printf("failed to initialise.\n");
+        return 1;
+    } else {
+        printf("initialized!\n");
+    }
+
     if (access_point) {
         // mode = send;
 
         // Allocate TCP server state
         TCP_SERVER_T* state = calloc(1, sizeof(TCP_SERVER_T));
+        printf("Allocating TCP server state...");
         if (!state) {
-            printf("failed to allocate state\n");
+            printf("failed to allocate state.\n");
             return 1;
+        } else {
+            printf("allocated!\n");
         }
-        printf("TCP server state allocated!\n");
-
-        // Initialize Wifi chip
-        if (cyw43_arch_init()) {
-            printf("failed to initialise\n");
-            return 1;
-        }
-        printf("CYW43 initialized!\n");
 
         // access point SSID and PASSWORD
         // WPA2 authorization
@@ -541,7 +546,7 @@ int main()
         const char* password = "password";
 
         cyw43_arch_enable_ap_mode(ap_name, password, CYW43_AUTH_WPA2_AES_PSK);
-        printf("Access point enabled!\n");
+        printf("Access point mode enabled!\n");
 
         // 'state' is a pointer to type TCP_SERVER_T
         // set up the access point IP address and mask
@@ -563,31 +568,33 @@ int main()
         // set 'mask' as defined above
         dhcp_server_t dhcp_server;
         dhcp_server_init(&dhcp_server, &state->gw, &mask);
-    }
 
-    else {
+        printf("My IPv4 addr = %s\n", ip4addr_ntoa(&state->gw));
+
+    } else {
         // mode = echo;
         sleep_ms(1000);
         // =======================
-        // init the staTION network
-        if (cyw43_arch_init()) {
-            printf("failed to initialise\n");
-            return 1;
-        }
+        // // init the staTION network
+        // if (cyw43_arch_init()) {
+        //     printf("failed to initialise.\n");
+        //     return 1;
+        // }
 
         // hook up to local WIFI
         cyw43_arch_enable_sta_mode();
+        printf("Station mode enabled!\n");
 
         // power managment
         // cyw43_wifi_pm(&cyw43_state, CYW43_DEFAULT_PM & ~0xf);
 
-        printf("Connecting to Wi-Fi...\n");
+        printf("Connecting to Wi-Fi...");
         if (cyw43_arch_wifi_connect_timeout_ms(
                 WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 30000)) {
             printf("failed to connect.\n");
             return 1;
         } else {
-            printf("Connected to Wi-Fi:\n\tSSID = %s\n\tPASS = %s\n", WIFI_SSID,
+            printf("connected to Wi-Fi:\n\tSSID = %s\n\tPASS = %s\n", WIFI_SSID,
                    WIFI_PASSWORD);
 
             // optional print addr
@@ -599,8 +606,11 @@ int main()
             ip_addr_t ip;
             IP4_ADDR(&ip, 192, 168, 4, 10);
             netif_set_ipaddr(netif_default, &ip);
-            printf("modified: picoW IP addr: %s\n",
+            printf("Modified picoW IP addr to: %s\n",
                    ip4addr_ntoa(netif_ip4_addr(netif_list)));
+
+            printf("My IPv4 addr = %s\n", ip4addr_ntoa(&ip));
+
 #ifdef auto_setup
             paired = true;
             play   = true;
@@ -609,13 +619,19 @@ int main()
     }
 
     //============================
-    // set up UDP recenve ISR handler
-    udpecho_raw_init();
+    // set up UDP receive ISR handler
+    printf("Initializing recv callback...");
+    if (udpecho_raw_init()) {
+        printf("receive callback failed to initialize.");
+    } else {
+        printf("callback initialized!\n");
+    }
 
     // =====================================
     // init the thread control semaphores
     // for the send/receive
     // recv semaphone is set by an ISR
+    printf("Initializing send/recv semaphores...\n");
     PT_SEM_INIT(&new_udp_send_s, 0);
     PT_SEM_INIT(&new_udp_recv_s, 0);
 
@@ -628,7 +644,7 @@ int main()
     // === config threads ========================
     // for core 0
 
-    // printf("Starting threads\n") ;
+    printf("Starting Protothreads...\n\n");
     pt_add_thread(protothread_udp_recv);
     pt_add_thread(protothread_udp_send);
     pt_add_thread(protothread_serial);
