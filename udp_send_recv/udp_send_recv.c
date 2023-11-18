@@ -1,6 +1,5 @@
 /*
- * Should compile into two separate binaries, one that is the sender and one
- * that is the receiver.
+ * Compiles into the following binaries:
  */
 
 // C libraries
@@ -29,7 +28,7 @@
 // #include "lwip/dns.h"
 // #include "lwip/netif.h"
 // #include "lwip/opt.h"
-#include "lwip/pbuf.h"
+// #include "lwip/pbuf.h"
 // #include "lwip/stats.h"
 // #include "lwip/tcp.h"
 #include "lwip/udp.h"
@@ -37,16 +36,17 @@
 // DHCP
 #include "dhcpserver/dhcpserver.h"
 
-// #define AP 1
-// #define STA 1
+#ifndef AP
+#define AP 1
+#endif
 
 // UDP constants
 #define UDP_PORT        4444 // Same port number on both devices
 #define UDP_MSG_LEN_MAX 1400
 
 // IP addresses
-#define AP_ADDR      "192.168.4.10"
-#define STATION_ADDR "192.168.4.1"
+#define AP_ADDR      "192.168.4.1"
+#define STATION_ADDR "192.168.4.10"
 char udp_target_pico[20] = "255.255.255.255";
 
 // Wifi name and password
@@ -69,7 +69,7 @@ int paired = false;
 void udpecho_raw_recv(void* arg, struct udp_pcb* upcb, struct pbuf* p,
                       const ip_addr_t* addr, u16_t port)
 {
-    printf("recv func\n");
+    // printf("recv func\n");
     // TODO: I don't know what this does
     LWIP_UNUSED_ARG(arg);
 
@@ -90,7 +90,7 @@ void udpecho_raw_recv(void* arg, struct udp_pcb* upcb, struct pbuf* p,
         // Signal that the recv buffer has been written
         PT_SEM_SIGNAL(pt, &new_udp_recv_s);
     } else {
-        printf("ERROR: NULL pt in callback");
+        printf("ERROR: NULL pt in callback\n");
     }
 }
 
@@ -115,10 +115,10 @@ void udpecho_raw_init(void)
             udp_recv(udpecho_raw_pcb, udpecho_raw_recv, NULL);
             // printf("Set up recv callback\n");
         } else {
-            printf("bind error");
+            printf("bind error\n");
         }
     } else {
-        printf("ERROR: udpecho_raw_pcb was NULL");
+        printf("ERROR: udpecho_raw_pcb was NULL\n");
     }
 }
 
@@ -165,14 +165,16 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
         //     }
         // }
 
-#if AP == 1
-        // Set dest addr to station IP address
-        ipaddr_aton(STATION_ADDR, &addr);
+        // #if AP == 1
+        //         // Set dest addr to station IP address
+        //         ipaddr_aton(STATION_ADDR, &addr);
 
-#else
-        // Set dest addr to access point IP address
-        ipaddr_aton(AP_ADDR, &addr);
-#endif
+        // #else
+        //         // Set dest addr to access point IP address
+        //         ipaddr_aton(AP_ADDR, &addr);
+        // #endif
+
+        ipaddr_aton(udp_target_pico, &addr);
 
         // // get the length specified by another thread
         // static int udp_send_length;
@@ -201,7 +203,7 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
 
         // Send packet
         // cyw43_arch_lwip_begin();
-        printf("Send data: %s\n", send_data);
+        printf("Sent msg:\ndest: %s\nmsg: %s\n", udp_target_pico, send_data);
         err_t er = udp_sendto(pcb, p, &addr, UDP_PORT); // port
         // cyw43_arch_lwip_end();
 
@@ -211,8 +213,10 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
             // printf("Sent packet %d\n", counter);
             counter++;
         } else {
-            printf("Failed to send UDP packet! error=%d", er);
+            printf("Failed to send UDP packet! error=%d\n", er);
         }
+
+        PT_YIELD(pt);
     }
     PT_END(pt);
 }
@@ -285,11 +289,11 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         //     }
         // }
 
-        printf("%s", recv_data);
+        printf("Recieved msg: %s\n", recv_data);
 
-        PT_SEM_SIGNAL(pt, &new_udp_send_s);
+        // PT_SEM_SIGNAL(pt, &new_udp_send_s);
 
-        // PT_YIELD(pt);
+        PT_YIELD(pt);
 
         // NEVER exit while
     } // END WHILE(1)
@@ -322,20 +326,21 @@ static PT_THREAD(protothread_serial(struct pt* pt))
         // }
 
         if (AP == 1) {
-            sprintf(pt_serial_out_buffer, "cmd> ");
+            sprintf(pt_serial_out_buffer, ">>> ");
         }
 
-        // spawn a thread to do the non-blocking write
+        // Spawn a thread to do the non-blocking write
         serial_write;
 
-        // spawn a thread to do the non-blocking serial read
+        // Spawn a thread to do the non-blocking serial read
         serial_read;
 
-        // Write message to send buffer
-        memset(send_data, 0, UDP_MSG_LEN_MAX);
-        sprintf(send_data, "%s", pt_serial_in_buffer);
-
-        PT_SEM_SIGNAL(pt, &new_udp_send_s);
+        if (strcmp(pt_serial_in_buffer, "") != 0) {
+            // Write message to send buffer
+            memset(send_data, 0, UDP_MSG_LEN_MAX);
+            sprintf(send_data, "%s", pt_serial_in_buffer);
+            PT_SEM_SIGNAL(pt, &new_udp_send_s);
+        }
 
         //
         //
@@ -533,7 +538,7 @@ int main()
         // 'state' is a pointer to type TCP_SERVER_T
         // set up the access point IP address and mask
         ip4_addr_t mask;
-        IP4_ADDR(ip_2_ip4(&state->gw), 192, 168, 4, 10);
+        IP4_ADDR(ip_2_ip4(&state->gw), 192, 168, 4, 1);
         IP4_ADDR(ip_2_ip4(&mask), 255, 255, 255, 0);
 
         // station address (as set below)
@@ -574,7 +579,7 @@ int main()
             printf("failed to connect.\n");
             return 1;
         } else {
-            printf("Connected to Wi-Fi:\n\tSSID = %s\n\tPASS = %s", WIFI_SSID,
+            printf("Connected to Wi-Fi:\n\tSSID = %s\n\tPASS = %s\n", WIFI_SSID,
                    WIFI_PASSWORD);
 
             // optional print addr
@@ -584,10 +589,10 @@ int main()
             sprintf(udp_target_pico, "%s", AP_ADDR);
             // set local addr by overridding DHCP
             ip_addr_t ip;
-            IP4_ADDR(&ip, 192, 168, 4, 1);
+            IP4_ADDR(&ip, 192, 168, 4, 10);
             netif_set_ipaddr(netif_default, &ip);
-// printf("modified: picoW IP addr: %s\n",
-// ip4addr_ntoa(netif_ip4_addr(netif_list)));
+            printf("modified: picoW IP addr: %s\n",
+                   ip4addr_ntoa(netif_ip4_addr(netif_list)));
 #ifdef auto_setup
             paired = true;
             play   = true;
