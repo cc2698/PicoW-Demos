@@ -18,26 +18,26 @@
 #include "pt_cornell_rp2040_v1_1_2.h"
 
 // Hardware
-#include "hardware/gpio.h"
-#include "hardware/spi.h"
-#include "hardware/sync.h"
-#include "hardware/timer.h"
-#include "hardware/uart.h"
+// #include "hardware/gpio.h"
+// #include "hardware/spi.h"
+// #include "hardware/sync.h"
+// #include "hardware/timer.h"
+// #include "hardware/uart.h"
 
 // Lightweight IP
-#include "lwip/debug.h"
-#include "lwip/dns.h"
-#include "lwip/netif.h"
-#include "lwip/opt.h"
+// #include "lwip/debug.h"
+// #include "lwip/dns.h"
+// #include "lwip/netif.h"
+// #include "lwip/opt.h"
 #include "lwip/pbuf.h"
-#include "lwip/stats.h"
-#include "lwip/tcp.h"
+// #include "lwip/stats.h"
+// #include "lwip/tcp.h"
 #include "lwip/udp.h"
 
 // DHCP
 #include "dhcpserver/dhcpserver.h"
 
-#define AP 0
+// #define AP 1
 // #define STA 1
 
 // UDP constants
@@ -288,6 +288,8 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         printf("%s", recv_data);
 
         PT_SEM_SIGNAL(pt, &new_udp_send_s);
+
+        // PT_YIELD(pt);
 
         // NEVER exit while
     } // END WHILE(1)
