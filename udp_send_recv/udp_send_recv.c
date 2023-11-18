@@ -26,9 +26,9 @@
 // Lightweight IP
 // #include "lwip/debug.h"
 // #include "lwip/dns.h"
-// #include "lwip/netif.h"
-// #include "lwip/opt.h"
-// #include "lwip/pbuf.h"
+#include "lwip/netif.h" // Included by lwip/udp.h
+#include "lwip/opt.h"   // Included by lwip/udp.h
+#include "lwip/pbuf.h"  // Included by lwip/udp.h
 // #include "lwip/stats.h"
 // #include "lwip/tcp.h"
 #include "lwip/udp.h"
@@ -36,15 +36,12 @@
 // DHCP
 #include "dhcpserver/dhcpserver.h"
 
-#ifndef AP
-#define AP 1
-#endif
-
 // UDP constants
 #define UDP_PORT        4444 // Same port number on both devices
 #define UDP_MSG_LEN_MAX 1400
 
 // IP addresses
+int access_point = true;
 #define AP_ADDR      "192.168.4.1"
 #define STATION_ADDR "192.168.4.10"
 char udp_target_pico[20] = "255.255.255.255";
@@ -203,7 +200,8 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
 
         // Send packet
         // cyw43_arch_lwip_begin();
-        printf("Sent msg:\ndest: %s\nmsg: %s\n", udp_target_pico, send_data);
+        printf("| Send:\n|\tdest: %s\n|\tmsg: %s\n", udp_target_pico,
+               send_data);
         err_t er = udp_sendto(pcb, p, &addr, UDP_PORT); // port
         // cyw43_arch_lwip_end();
 
@@ -289,7 +287,7 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         //     }
         // }
 
-        printf("Recieved msg: %s\n", recv_data);
+        printf("| Recv:\n|\tmsg: %s\n", recv_data);
 
         // PT_SEM_SIGNAL(pt, &new_udp_send_s);
 
@@ -325,7 +323,7 @@ static PT_THREAD(protothread_serial(struct pt* pt))
         //     sprintf(pt_serial_out_buffer, "no cmd in recv mode ");
         // }
 
-        if (AP == 1) {
+        if (access_point) {
             sprintf(pt_serial_out_buffer, ">>> ");
         }
 
@@ -476,6 +474,16 @@ int main()
     // init the serial
     stdio_init_all();
 
+#ifdef AP
+    access_point = true;
+#else
+    access_point = false;
+#endif
+
+    // Printout whether you're an AP or a station
+    printf("\n\n==================== %s ====================\n\n",
+           (access_point ? "Access Point" : "Station"));
+
     // // Initialize SPI channel (channel, baud rate set to 20MHz)
     // // connected to spi DAC
     // spi_init(SPI_PORT, 20000000) ;
@@ -504,13 +512,13 @@ int main()
     // =======================
     // choose station vs access point
     // (receive vs send)
-    int ap = AP;
+    // int ap = AP;
     // jumper gpio 2 high for 'send' mode
     // start 'send' mode unit first!
     // ap = gpio_get(mode_sel);
     //
-    if (ap) {
-        // mode                = send;
+    if (access_point) {
+        // mode = send;
 
         // Allocate TCP server state
         TCP_SERVER_T* state = calloc(1, sizeof(TCP_SERVER_T));
@@ -525,7 +533,7 @@ int main()
             printf("failed to initialise\n");
             return 1;
         }
-        printf("cyw43 initialized!\n");
+        printf("CYW43 initialized!\n");
 
         // access point SSID and PASSWORD
         // WPA2 authorization
@@ -533,7 +541,7 @@ int main()
         const char* password = "password";
 
         cyw43_arch_enable_ap_mode(ap_name, password, CYW43_AUTH_WPA2_AES_PSK);
-        printf("Access point initialized!\n");
+        printf("Access point enabled!\n");
 
         // 'state' is a pointer to type TCP_SERVER_T
         // set up the access point IP address and mask
