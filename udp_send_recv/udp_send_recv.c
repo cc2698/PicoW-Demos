@@ -47,6 +47,7 @@ int access_point = true;
 // IP addresses
 #define AP_ADDR      "192.168.4.1"
 #define STATION_ADDR "192.168.4.10"
+#define MASK_ADDR    "255.255.255.0"
 char udp_target_pico[20] = "255.255.255.255";
 static ip_addr_t dest_addr;
 
@@ -340,8 +341,8 @@ int main()
         // The variable 'state' is a pointer to a TCP_SERVER_T struct
         // Set up the access point IP address and mask
         ip4_addr_t mask;
-        IP4_ADDR(ip_2_ip4(&state->gw), 192, 168, 4, 1);
-        IP4_ADDR(ip_2_ip4(&mask), 255, 255, 255, 0);
+        ipaddr_aton(AP_ADDR, ip_2_ip4(&state->gw));
+        ipaddr_aton(MASK_ADDR, ip_2_ip4(&mask));
 
         // Configure target IP address
         sprintf(udp_target_pico, "%s", STATION_ADDR);
@@ -390,7 +391,8 @@ int main()
 
             // Set local address, override the address assigned by DHCP
             ip_addr_t ip;
-            IP4_ADDR(&ip, 192, 168, 4, 10);
+            ipaddr_aton(STATION_ADDR, &ip);
+
             netif_set_ipaddr(netif_default, &ip);
 
             // Print new local address
