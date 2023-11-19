@@ -81,11 +81,20 @@ typedef struct TCP_SERVER_T_ {
 // Flag the LED to be turned on
 volatile int led_flag = false;
 
+#define led_on()                                                               \
+    do {                                                                       \
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);                         \
+    } while (0);
+
+#define led_off()                                                              \
+    do {                                                                       \
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);                         \
+    } while (0);
+
 // Alarm callback function
 int64_t alarm_callback(alarm_id_t id, void* user_data)
 {
-    // Turn the LED off
-    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
+    led_off();
 
     // Returns 0 to not reschedule the alarm
     return 0;
@@ -279,8 +288,7 @@ void core_1_main()
 
     while (true) {
         if (led_flag) {
-            // Turn on the LED
-            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
+            led_on();
 
             // Start alarm
             add_alarm_in_ms(ALARM_MS, alarm_callback, NULL, false);
