@@ -10,9 +10,14 @@
 #include <string.h>
 
 // Pico
+#include "boards/pico_w.h"
 #include "pico/cyw43_arch.h"
 #include "pico/multicore.h"
 #include "pico/stdlib.h"
+
+// Hardware
+#include "hardware/irq.h"
+#include "hardware/timer.h"
 
 // Protothreads
 #include "pt_cornell_rp2040_v1_1_2.h"
@@ -55,6 +60,57 @@ typedef struct TCP_SERVER_T_ {
     ip_addr_t gw;
     async_context_t* context;
 } TCP_SERVER_T;
+
+/*
+ *  ALARM
+ */
+
+#define ALARM_NUM 1
+#define ALARM_IRQ 0
+
+volatile int led_flag = false;
+
+// static void alarm_irq(void)
+// {
+//     // Clear the alarm irq
+//     hw_clear_bits(&timer_hw->intr, 1u << ALARM_NUM);
+
+//     timer_hw->alarm[ALARM_NUM] = timer_hw->timerawl + 1e6;
+
+//     printf("turn LED off\n");
+
+//     cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
+// }
+
+// static void alarm_in_us(uint32_t delay_us)
+// {
+//     printf("Alarm for %d", delay_us);
+//     // Enable the interrupt for our alarm (the timer outputs 4 alarm irqs)
+//     hw_set_bits(&timer_hw->inte, 1u << ALARM_NUM);
+//     // Set irq handler for alarm irq
+//     irq_set_exclusive_handler(ALARM_IRQ, alarm_irq);
+//     // Enable the alarm irq
+//     irq_set_enabled(ALARM_IRQ, true);
+//     // Enable interrupt in block and at processor
+
+//     // Alarm is only 32 bits so if trying to delay more than that need to be
+//     // careful and keep track of the upper bits
+//     uint64_t target = timer_hw->timerawl + delay_us;
+
+//     // Write the lower 32 bits of the target time to the alarm which will arm
+//     it timer_hw->alarm[ALARM_NUM] = (uint32_t) target;
+
+//     printf("end\n");
+// }
+
+int64_t alarm_callback(alarm_id_t id, void* user_data)
+{
+    printf("turn LED off\n");
+
+    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
+    // Can return a value here in us to fire in the future
+    return 0;
+}
 
 /*
  *	UDP CALLBACK SETUP
@@ -193,6 +249,11 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         // Print the contents of the recv buffer
         printf("\n| Recv:\n|\tmsg:  \"%s\"\n\n", recv_data);
 
+        // Turn the LED on
+        printf("turn on LED\n");
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
+        led_flag = true;
+
         PT_YIELD(pt);
     }
 
@@ -233,6 +294,27 @@ static PT_THREAD(protothread_serial(struct pt* pt))
 /*
  *  MAIN
  */
+
+// static uint64_t get_time(void)
+// {
+//     // Reading low latches the high value
+//     uint32_t lo = timer_hw->timelr;
+//     uint32_t hi = timer_hw->timehr;
+//     return ((uint64_t) hi << 32u) | lo;
+// }
+
+void core1_main()
+{
+    printf("Core 1 active\n");
+
+    while (true) {
+        // sleep_ms(500);
+        if (led_flag) {
+            add_alarm_in_ms(1000, alarm_callback, NULL, false);
+            led_flag = false;
+        }
+    }
+}
 
 int main()
 {
@@ -357,8 +439,8 @@ int main()
     // =====================================
     // core 1
     // start core 1 threads
-    // multicore_reset_core1();
-    // multicore_launch_core1(&core1_main);
+    multicore_reset_core1();
+    multicore_launch_core1(&core1_main);
 
     // Start protothreads
     printf("Starting Protothreads!\n");

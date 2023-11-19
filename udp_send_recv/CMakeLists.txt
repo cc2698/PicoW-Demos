@@ -27,7 +27,7 @@ pico_sdk_init()
 add_executable(udp_ap)
 pico_enable_stdio_usb(udp_ap 0)
 pico_enable_stdio_uart(udp_ap 1)
-target_sources(udp_ap PRIVATE 
+target_sources(udp_ap PRIVATE
 		udp_send_recv.c
 		dhcpserver/dhcpserver.c
 )
@@ -49,7 +49,7 @@ pico_add_extra_outputs(udp_ap) # Generate UF2 output
 add_executable(udp_station)
 pico_enable_stdio_usb(udp_station 0)
 pico_enable_stdio_uart(udp_station 1)
-target_sources(udp_station PRIVATE 
+target_sources(udp_station PRIVATE
 		udp_send_recv.c
 		dhcpserver/dhcpserver.c
 )
@@ -60,8 +60,8 @@ target_include_directories(udp_station PRIVATE
 )
 target_link_libraries(udp_station PRIVATE
 		pico_cyw43_arch
-		pico_cyw43_arch_lwip_threadsafe_background 
-		pico_stdlib 
+		pico_cyw43_arch_lwip_threadsafe_background
+		pico_stdlib
 		pico_multicore
 )
 pico_add_extra_outputs(udp_station) # Generate UF2 output
