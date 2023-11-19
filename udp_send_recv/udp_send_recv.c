@@ -1,4 +1,13 @@
 /*
+ * This demonstration sets up one Pico-W as a Wifi access point, and another as
+ * a Wifi station. Using a UDP connection between the two, the user is able to
+ * type into the serial terminal on either Pico-W and have the input printed out
+ * on the other Pico-W's serial terminal.
+ *
+ * To show that multicore is possible in this application, I use Core 1 to flash
+ * the LED when a UDP packet is received. The application uses three
+ * protothreads (send, recv, and serial), all of which are executing on Core 0.
+ *
  * Compiles into the following binaries:
  *  - udp_ap.uf2
  *  - udp_station.uf2
