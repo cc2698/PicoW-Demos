@@ -1,4 +1,6 @@
 /*
+ * Chris (cc2698@cornell.edu)
+ *
  * This demonstration sets up one Pico-W as a Wifi access point, and another as
  * a Wifi station. Using a UDP connection between the two, the user is able to
  * type into the serial terminal on either Pico-W and have the input printed out
@@ -13,6 +15,13 @@
  * avoid contention over the send_data buffer. If the threads were to execute in
  * the following order: recv -> serial -> send, the serial thread might
  * overwrite the ACK with the user input.
+ *
+ * Specifically for packets with text, the RTT is significantly faster from
+ * (station -> ap -> station) as opposed to (ap -> station -> ap). Empty packets
+ * mostly have a low RTT. Sometimes packets going from (ap -> station -> ap)
+ * have a long RTT, likely because work is being done to keep the AP running.
+ *
+ * RTT is usually less than 100ms
  *
  * Compiles into the following binaries:
  *  - udp_ap.uf2
@@ -247,7 +256,7 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
         timestamp = time_us_64();
 
         // Append header to the payload
-        sprintf(buffer, "%s;%s;%d;%d;%s", "data", my_addr, packet_counter,
+        sprintf(buffer, "%s;%s;%d;%lu;%s", "data", my_addr, packet_counter,
                 timestamp, send_data);
 
         // Allocate pbuf
@@ -309,7 +318,7 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
     // Timestamp when the packet was sent
     static uint64_t timestamp;
 
-    static unsigned int rtt;
+    static float rtt_ms;
 
     while (true) {
         // Wait until the buffer is written
@@ -336,7 +345,7 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
 
         // If this packet is an ack, calculate the RTT
         if (strcmp(packet_type, "ack") == 0) {
-            rtt = time_us_64() - timestamp;
+            rtt_ms = (time_us_64() - timestamp) / 1000.0f;
         }
 
         // Contents
@@ -353,7 +362,7 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         if (strcmp(packet_type, "data") == 0) {
             printf("|\tmsg:     %s\n", msg);
         } else if (strcmp(packet_type, "ack") == 0) {
-            printf("|\tRTT:     %dus\n", rtt);
+            printf("|\tRTT:     %.2f ms\n", rtt_ms);
         }
 
         // If the packet is invalid
