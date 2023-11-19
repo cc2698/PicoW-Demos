@@ -416,9 +416,7 @@ int main()
     PT_SEM_INIT(&new_udp_send_s, 0);
     PT_SEM_INIT(&new_udp_recv_s, 0);
 
-    // =====================================
-    // core 1
-    // start core 1 threads
+    // Launch multicore
     multicore_reset_core1();
     multicore_launch_core1(&core_1_main);
 
