@@ -27,7 +27,7 @@
 // DHCP
 #include "dhcpserver/dhcpserver.h"
 
-// Is the Pico-W an access point?
+// Is this device an access point?
 int access_point = true;
 
 // UDP constants
@@ -38,12 +38,15 @@ int access_point = true;
 #define AP_ADDR      "192.168.4.1"
 #define STATION_ADDR "192.168.4.10"
 char udp_target_pico[20] = "255.255.255.255";
+static ip_addr_t dest_addr;
 
 // Wifi name and password
 #define WIFI_SSID     "picow_test"
 #define WIFI_PASSWORD "password"
 
 // UDP send/recv constructs
+static struct udp_pcb* udp_recv_pcb;
+static struct udp_pcb* udp_send_pcb;
 char recv_data[UDP_MSG_LEN_MAX];
 char send_data[UDP_MSG_LEN_MAX];
 struct pt_sem new_udp_send_s, new_udp_recv_s;
@@ -62,8 +65,8 @@ typedef struct TCP_SERVER_T_ {
  */
 
 // UDP recv function
-void udpecho_raw_recv(void* arg, struct udp_pcb* upcb, struct pbuf* p,
-                      const ip_addr_t* addr, u16_t port)
+void udp_recv_callback(void* arg, struct udp_pcb* upcb, struct pbuf* p,
+                       const ip_addr_t* addr, u16_t port)
 {
     // Prevent "unused argument" compiler warning
     LWIP_UNUSED_ARG(arg);
@@ -82,27 +85,28 @@ void udpecho_raw_recv(void* arg, struct udp_pcb* upcb, struct pbuf* p,
     }
 }
 
-static struct udp_pcb* udpecho_raw_pcb;
-
 // Define the recv callback function
-int udpecho_raw_init(void)
+int udp_recv_callback_init(void)
 {
-    struct pbuf* p; // OMVED
-    udpecho_raw_pcb = udp_new_ip_type(IPADDR_TYPE_ANY);
+    // Allocate packet buffer
+    struct pbuf* p;
     p = pbuf_alloc(PBUF_TRANSPORT, UDP_MSG_LEN_MAX + 1, PBUF_POOL);
 
-    if (udpecho_raw_pcb != NULL) {
+    // Create a new UDP PCB
+    udp_recv_pcb = udp_new_ip_type(IPADDR_TYPE_ANY);
+
+    if (udp_recv_pcb != NULL) {
         err_t err;
 
         // Bind the UDP PCB to the socket
         // - netif_ip4_addr returns the picow ip address
-        err = udp_bind(udpecho_raw_pcb, netif_ip4_addr(netif_list),
+        err = udp_bind(udp_recv_pcb, netif_ip4_addr(netif_list),
                        UDP_PORT); // DHCP addr
 
         if (err == ERR_OK) {
             // This function assigns the callback function for when a UDP packet
             // is received
-            udp_recv(udpecho_raw_pcb, udpecho_raw_recv, NULL);
+            udp_recv(udp_recv_pcb, udp_recv_callback, NULL);
         } else {
             printf("UDP bind error\n");
             return 1;
@@ -123,26 +127,26 @@ int udpecho_raw_init(void)
 // ==================================================
 // UDP send thread
 // ==================================================
-static ip_addr_t addr;
 static PT_THREAD(protothread_udp_send(struct pt* pt))
 {
     PT_BEGIN(pt);
 
-    // Initialize a PCB for UDP-send
-    static struct udp_pcb* pcb;
-    pcb = udp_new();
+    // Create a new UDP PCB
+    udp_send_pcb = udp_new();
 
-    pcb->remote_port = UDP_PORT;
-    pcb->local_port  = UDP_PORT;
+    // Assign port numbers
+    udp_send_pcb->remote_port = UDP_PORT;
+    udp_send_pcb->local_port  = UDP_PORT;
 
+    // Count the number of packets sent
     static int counter = 0;
 
     while (true) {
         // Wait until the send buffer is written
         PT_SEM_WAIT(pt, &new_udp_send_s);
 
-        // Assign target pico IP addr
-        ipaddr_aton(udp_target_pico, &addr);
+        // Assign target pico IP address
+        ipaddr_aton(udp_target_pico, &dest_addr);
 
         // Allocate pbuf
         static int udp_send_length;
@@ -155,20 +159,23 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
         memset(req, 0, udp_send_length + 1);
         memcpy(req, send_data, udp_send_length);
 
-        // Send packet
-        // cyw43_arch_lwip_begin();
+        // Print packet metadata
         printf("\n| Send:\n|\tnum:  %d\n|\tdest: %s\n|\tmsg:  \"%s\"\n\n",
                counter, udp_target_pico, send_data);
-        err_t er = udp_sendto(pcb, p, &addr, UDP_PORT); // port
+
+        // Send packet
+        // cyw43_arch_lwip_begin();
+        err_t er = udp_sendto(udp_send_pcb, p, &dest_addr, UDP_PORT);
         // cyw43_arch_lwip_end();
 
-        // Free the packet buffer
-        pbuf_free(p);
         if (er == ERR_OK) {
             counter++;
         } else {
             printf("Failed to send UDP packet! error=%d\n", er);
         }
+
+        // Free the packet buffer
+        pbuf_free(p);
 
         PT_YIELD(pt);
     }
@@ -183,7 +190,7 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
 {
     PT_BEGIN(pt);
 
-    while (1) {
+    while (true) {
         // Wait until the recv buffer is written
         PT_SEM_WAIT(pt, &new_udp_recv_s);
 
@@ -203,11 +210,14 @@ static PT_THREAD(protothread_serial(struct pt* pt))
 {
     PT_BEGIN(pt);
 
-    while (1) {
+    while (true) {
         // Yielding here is not strictly necessary but it gives a little bit of
         // slack for the async processes so that the output is in the correct
-        // order (most of the time)
-        PT_YIELD_usec(100000);
+        // order (most of the time).
+        //      - Bruce Land
+        //
+        // Idle for 100ms
+        PT_YIELD_usec(1e5);
 
         // Spawn threads for non-blocking read/write
         serial_write;
@@ -336,7 +346,7 @@ int main()
 
     // Initialize UDP recv callback function
     printf("Initializing recv callback...");
-    if (udpecho_raw_init()) {
+    if (udp_recv_callback_init()) {
         printf("receive callback failed to initialize.");
     } else {
         printf("callback initialized!\n");
@@ -356,7 +366,7 @@ int main()
     // multicore_launch_core1(&core1_main);
 
     // Start protothreads
-    printf("Starting Protothreads!");
+    printf("Starting Protothreads!\n");
     pt_add_thread(protothread_udp_recv);
     pt_add_thread(protothread_udp_send);
     pt_add_thread(protothread_serial);
