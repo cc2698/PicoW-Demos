@@ -1,5 +1,7 @@
 /*
  * Compiles into the following binaries:
+ *  - udp_ap.uf2
+ *  - udp_station.uf2
  */
 
 // C libraries
@@ -16,32 +18,23 @@
 // Protothreads
 #include "pt_cornell_rp2040_v1_1_2.h"
 
-// Hardware
-// #include "hardware/gpio.h"
-// #include "hardware/spi.h"
-// #include "hardware/sync.h"
-// #include "hardware/timer.h"
-// #include "hardware/uart.h"
-
 // Lightweight IP
-// #include "lwip/debug.h"
-// #include "lwip/dns.h"
 #include "lwip/netif.h" // Included by lwip/udp.h
 #include "lwip/opt.h"   // Included by lwip/udp.h
 #include "lwip/pbuf.h"  // Included by lwip/udp.h
-// #include "lwip/stats.h"
-// #include "lwip/tcp.h"
 #include "lwip/udp.h"
 
 // DHCP
 #include "dhcpserver/dhcpserver.h"
+
+// Is the Pico-W an access point?
+int access_point = true;
 
 // UDP constants
 #define UDP_PORT        4444 // Same port number on both devices
 #define UDP_MSG_LEN_MAX 1400
 
 // IP addresses
-int access_point = true;
 #define AP_ADDR      "192.168.4.1"
 #define STATION_ADDR "192.168.4.10"
 char udp_target_pico[20] = "255.255.255.255";
@@ -55,8 +48,14 @@ char recv_data[UDP_MSG_LEN_MAX];
 char send_data[UDP_MSG_LEN_MAX];
 struct pt_sem new_udp_send_s, new_udp_recv_s;
 
-// Is the device paired?
-int paired = false;
+// Bruce Land's TCP server structure. Stores metadata for an access point hosted
+// by a Pico-W. This includes the IPv4 address.
+typedef struct TCP_SERVER_T_ {
+    struct tcp_pcb* server_pcb;
+    bool complete;
+    ip_addr_t gw;
+    async_context_t* context;
+} TCP_SERVER_T;
 
 /*
  *	UDP CALLBACK SETUP
@@ -66,23 +65,15 @@ int paired = false;
 void udpecho_raw_recv(void* arg, struct udp_pcb* upcb, struct pbuf* p,
                       const ip_addr_t* addr, u16_t port)
 {
-    // printf("recv func\n");
-    // TODO: I don't know what this does
+    // Prevent "unused argument" compiler warning
     LWIP_UNUSED_ARG(arg);
 
     if (p != NULL) {
-        // printf("p payload in call back: = %s\n", p->payload);
-
         // Copy the payload into the recv buffer
         memcpy(recv_data, p->payload, UDP_MSG_LEN_MAX);
 
-        /* Free the pbuf */
+        // Free the packet buffer
         pbuf_free(p);
-
-        // // can signal from an ISR -- BUT NEVER wait in an ISR
-        // // dont waste time if actaullly playing
-        // if (!(play && (mode == echo)))
-        //     PT_SEM_SIGNAL(pt, &new_udp_recv_s);
 
         // Signal that the recv buffer has been written
         PT_SEM_SIGNAL(pt, &new_udp_recv_s);
@@ -109,6 +100,8 @@ int udpecho_raw_init(void)
                        UDP_PORT); // DHCP addr
 
         if (err == ERR_OK) {
+            // This function assigns the callback function for when a UDP packet
+            // is received
             udp_recv(udpecho_raw_pcb, udpecho_raw_recv, NULL);
         } else {
             printf("UDP bind error\n");
@@ -135,61 +128,21 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
 {
     PT_BEGIN(pt);
 
+    // Initialize a PCB for UDP-send
     static struct udp_pcb* pcb;
-    pcb              = udp_new();
+    pcb = udp_new();
+
     pcb->remote_port = UDP_PORT;
     pcb->local_port  = UDP_PORT;
 
     static int counter = 0;
 
     while (true) {
-
-        // Wait until there is something to send
+        // Wait until the send buffer is written
         PT_SEM_WAIT(pt, &new_udp_send_s);
 
-        // // in paired mode, the two picos talk just to each other
-        // // before pairing, the echo unit talks to the laptop
-        // if (mode == echo) {
-        //     if (paired == true) {
-        //         ipaddr_aton(udp_target_pico, &addr);
-        //     } else {
-        //         ipaddr_aton(udp_target_pico, &addr);
-        //     }
-        // }
-        // // broadcast mode makes sure that another pico sees the packet
-        // // to sent an address and for testing
-        // else if (mode == send) {
-        //     if (paired == true) {
-        //         ipaddr_aton(udp_target_pico, &addr);
-        //     } else {
-        //         ipaddr_aton(UDP_TARGET_BROADCAST, &addr);
-        //     }
-        // }
-
-        // #if AP == 1
-        //         // Set dest addr to station IP address
-        //         ipaddr_aton(STATION_ADDR, &addr);
-
-        // #else
-        //         // Set dest addr to access point IP address
-        //         ipaddr_aton(AP_ADDR, &addr);
-        // #endif
-
+        // Assign target pico IP addr
         ipaddr_aton(udp_target_pico, &addr);
-
-        // // get the length specified by another thread
-        // static int udp_send_length;
-        // switch (packet_length) {
-        // case command:
-        //     udp_send_length = 32;
-        //     break;
-        // case data:
-        //     udp_send_length = send_data_size;
-        //     break;
-        // case ack:
-        //     udp_send_length = 5;
-        //     break;
-        // }
 
         // Allocate pbuf
         static int udp_send_length;
@@ -197,22 +150,21 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
         struct pbuf* p =
             pbuf_alloc(PBUF_TRANSPORT, udp_send_length + 1, PBUF_RAM);
 
-        // Zero the payload and write
+        // Clear the payload and write to it
         char* req = (char*) p->payload; // Cast from void* to char*
         memset(req, 0, udp_send_length + 1);
         memcpy(req, send_data, udp_send_length);
 
         // Send packet
         // cyw43_arch_lwip_begin();
-        printf("\n| Send:\n|\tdest: %s\n|\tmsg:  \"%s\"\n\n", udp_target_pico,
-               send_data);
+        printf("\n| Send:\n|\tnum:  %d\n|\tdest: %s\n|\tmsg:  \"%s\"\n\n",
+               counter, udp_target_pico, send_data);
         err_t er = udp_sendto(pcb, p, &addr, UDP_PORT); // port
         // cyw43_arch_lwip_end();
 
         // Free the packet buffer
         pbuf_free(p);
         if (er == ERR_OK) {
-            // printf("Sent packet %d\n", counter);
             counter++;
         } else {
             printf("Failed to send UDP packet! error=%d\n", er);
@@ -220,6 +172,7 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
 
         PT_YIELD(pt);
     }
+
     PT_END(pt);
 }
 
@@ -230,77 +183,18 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
 {
     PT_BEGIN(pt);
 
-    static char arg1[32], arg2[32], arg3[32], arg4[32];
-    static char* token;
-
-    // data structure for interval timer
-    // PT_INTERVAL_INIT() ;
-
     while (1) {
-        // wait for new packet
-        // signalled by LWIP receive ISR
+        // Wait until the recv buffer is written
         PT_SEM_WAIT(pt, &new_udp_recv_s);
 
-        // // parse command
-        // token = strtok(recv_data, "  ");
-        // strcpy(arg1, token);
-        // token = strtok(NULL, "  ");
-        // strcpy(arg2, token);
-
-        // // is this a pairing packet (starts with IP)
-        // // if so, parse address
-        // // process packet to get time
-        // if ((strcmp(arg1, "IP") == 0) && !play) {
-        //     if (mode == echo) {
-        //         // if I'm the echo unit, grab the address of the other pico
-        //         // for the send thread to use
-        //         strcpy(udp_target_pico, arg2);
-        //         //
-        //         paired = true;
-        //         // then send back echo-unit address to send-pico
-        //         memset(send_data, 0, UDP_MSG_LEN_MAX);
-        //         sprintf(send_data, "IP %s",
-        //                 ip4addr_ntoa(netif_ip4_addr(netif_list)));
-        //         packet_length = command;
-        //         // local effects
-        //         printf("sent back IP %s\n\r",
-        //                ip4addr_ntoa(netif_ip4_addr(netif_list)));
-        //         blink_time = 500;
-        //         // tell send threead
-        //         PT_SEM_SIGNAL(pt, &new_udp_send_s);
-        //         PT_YIELD(pt);
-        //     } else {
-        //         // if I'm the send unit, then just save for future transmit
-        //         strcpy(udp_target_pico, arg2);
-        //     }
-        // } // end  if(strcmp(arg1,"IP")==0)
-
-        // // is it ack packet ?
-        // else if ((strcmp(arg1, "ack") == 0) && !play) {
-        //     if (mode == send) {
-        //         // print a long-long 64 bit int
-        //         printf("%lld usec ack\n\r", PT_GET_TIME_usec() - time1);
-        //     }
-        //     if ((mode == echo) && !play) {
-        //         memset(send_data, 0, UDP_MSG_LEN_MAX);
-        //         sprintf(send_data, "ack");
-        //         packet_length = ack;
-        //         // tell send threead
-        //         PT_SEM_SIGNAL(pt, &new_udp_send_s);
-        //         PT_YIELD(pt);
-        //     }
-        // }
-
+        // Print the contents of the recv buffer
         printf("\n| Recv:\n|\tmsg:  \"%s\"\n\n", recv_data);
 
-        // PT_SEM_SIGNAL(pt, &new_udp_send_s);
-
         PT_YIELD(pt);
+    }
 
-        // NEVER exit while
-    } // END WHILE(1)
     PT_END(pt);
-} // recv thread
+}
 
 // =================================================
 // input thread
@@ -308,172 +202,41 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
 static PT_THREAD(protothread_serial(struct pt* pt))
 {
     PT_BEGIN(pt);
-    static char cmd[16], arg1[16], arg2[16];
-    static char* token;
-    //
-    // if (mode == send)
-    //     printf("Type 'help' for commands\n\r");
 
     while (1) {
-        // the yield time is not strictly necessary for protothreads
-        // but gives a little slack for the async processes
-        // so that the output is in the correct order (most of the time)
+        // Yielding here is not strictly necessary but it gives a little bit of
+        // slack for the async processes so that the output is in the correct
+        // order (most of the time)
         PT_YIELD_usec(100000);
 
-        // if (mode == send) {
-        //     // print prompt
-        //     sprintf(pt_serial_out_buffer, "cmd> ");
-        // } else {
-        //     sprintf(pt_serial_out_buffer, "no cmd in recv mode ");
-        // }
-
-        // Spawn a thread to do the non-blocking write
+        // Spawn threads for non-blocking read/write
         serial_write;
-
-        // Spawn a thread to do the non-blocking serial read
         serial_read;
 
+        // If the input buffer is non-empty
         if (strcmp(pt_serial_in_buffer, "") != 0) {
             // Write message to send buffer
             memset(send_data, 0, UDP_MSG_LEN_MAX);
             sprintf(send_data, "%s", pt_serial_in_buffer);
             PT_SEM_SIGNAL(pt, &new_udp_send_s);
         }
-
-        //
-        //
-        //
-        //
-        //
-
-        // // tokenize
-        // token = strtok(pt_serial_in_buffer, "  ");
-        // strcpy(cmd, token);
-        // token = strtok(NULL, "  ");
-        // strcpy(arg1, token);
-        // token = strtok(NULL, "  ");
-        // strcpy(arg2, token);
-        // // token = strtok(NULL, "  ");
-        // // strcpy(arg3, token) ;
-        // // token = strtok(NULL, "  ");
-        // // strcpy(arg4, token) ;
-        // // token = strtok(NULL, "  ");
-        // // strcpy(arg5, token) ;
-        // // token = strtok(NULL, "  ");
-        // // strcpy(arg6, token) ;
-
-        // // parse by command
-        // if (strcmp(cmd, "help") == 0) {
-        //     // commands
-        //     // printf("set mode [send, recv]\n\r");
-        //     printf("play frequency\n\r");
-        //     printf("stop \n\r");
-        //     printf("pair \n\r");
-        //     printf("ack \n\r");
-        //     // printf("data array_size \n\r");
-        //     //
-        //     //  need start data and end data commands
-        // }
-
-        // /* this is now done in MAIN before network setup
-        // // set the unit mode
-        // else if(strcmp(cmd,"set")==0){
-        //     if(strcmp(arg1,"recv")==0) {
-        //         mode = echo ;
-        //     }
-        //     else if(strcmp(arg1,"send")==0) mode = send ;
-        //     else printf("bad mode");
-        //         //printf("%d\n", mode);
-        // }
-        // */
-
-        // // identify other pico on the same subnet
-        // // not needed if autp_setup defined
-        // else if (strcmp(cmd, "pair") == 0) {
-        //     if (mode == send) {
-        //         // broadcast sender's IP addr
-        //         memset(send_data, 0, UDP_MSG_LEN_MAX);
-        //         sprintf(send_data, "IP %s",
-        //                 ip4addr_ntoa(netif_ip4_addr(netif_list)));
-        //         packet_length = command;
-        //         PT_SEM_SIGNAL(pt, &new_udp_send_s);
-        //         // diagnostics:
-        //         printf("send IP %s\n",
-        //                ip4addr_ntoa(netif_ip4_addr(netif_list)));
-        //         // boradcast until paired
-        //         printf("sendto IP %s\n", udp_target_pico);
-        //         // probably shoulld be some error checking here
-        //         paired = true;
-        //     } else
-        //         printf("No pairing in recv mode -- set send\n");
-        // }
-
-        // // send ack packet
-        // else if (strcmp(cmd, "ack") == 0) {
-        //     if (mode == send) {
-        //         memset(send_data, 0, UDP_MSG_LEN_MAX);
-        //         sprintf(send_data, "ack");
-        //         packet_length = ack;
-        //         time1         = PT_GET_TIME_usec();
-        //         PT_SEM_SIGNAL(pt, &new_udp_send_s);
-        //         // yield so that send thread gets faster access
-        //         PT_YIELD(pt);
-        //     } else
-        //         printf("No ack in recv mode -- set send\n");
-        // }
-
-        // // send DDS to the other pico in the alarm ISR
-        // else if (strcmp(cmd, "play") == 0) {
-        //     packet_length   = data;
-        //     play            = true;
-        //     tx_buffer_index = 0;
-        //     rx_buffer_index = 0;
-        //     if (mode == send) {
-        //         sscanf(arg1, "%f", &Fout);
-        //         main_inc   = (unsigned int) (Fout * 4294967296 / Fs);
-        //         main_accum = 0;
-        //     }
-        // }
-
-        // else if (strcmp(cmd, "stop") == 0) {
-        //     main_inc   = 0;
-        //     main_accum = 0;
-        //     PT_YIELD_usec(50000);
-        //     play = false;
-        // }
-
-        // // no valid command
-        // else
-        //     printf("Huh? Type help. \n\r");
-
-        // NEVER exit while
-    } // END WHILE(1)
+    }
 
     PT_END(pt);
-} // serial thread
-
-// Bruce Land's TCP server structure. Stores metadata for an access point hosted
-// by a Pico-W.
-typedef struct TCP_SERVER_T_ {
-    struct tcp_pcb* server_pcb;
-    bool complete;
-    ip_addr_t gw;
-    async_context_t* context;
-} TCP_SERVER_T;
+}
 
 /*
  *  MAIN
  */
 
-#define WIFI_SSID     "picow_test"
-#define WIFI_PASSWORD "password"
-
 int main()
 {
-    // =======================
-    // init the serial
+    // Initialize all stdio types
     stdio_init_all();
 
+// If this pico is hosting an AP, set access_point to true. The macro is defined
+// at compile-time by CMake allowing for the same file to be compiled into two
+// separate binaries, one for the access point and one for the station.
 #ifdef AP
     access_point = true;
 #else
@@ -483,40 +246,6 @@ int main()
     // Printout whether you're an AP or a station
     printf("\n\n==================== %s ====================\n\n",
            (access_point ? "Access Point" : "Station"));
-
-    // // Initialize SPI channel (channel, baud rate set to 20MHz)
-    // // connected to spi DAC
-    // spi_init(SPI_PORT, 20000000) ;
-    // // Format (channel, data bits per transfer, polarity, phase, order)
-    // spi_set_format(SPI_PORT, 16, 0, 0, 0);
-    // // Map SPI signals to GPIO ports
-    // //gpio_set_function(PIN_MISO, GPIO_FUNC_SPI);
-    // gpio_set_function(PIN_SCK, GPIO_FUNC_SPI);
-    // gpio_set_function(PIN_MOSI, GPIO_FUNC_SPI);
-    // gpio_set_function(PIN_CS, GPIO_FUNC_SPI) ;
-
-    // // connecting gpio2 to Vdd sets 'send' mode
-    // #define mode_sel 2
-    // gpio_init(mode_sel) ;
-    // gpio_set_dir(mode_sel, GPIO_IN) ;
-    // // turn pulldown on
-    // gpio_set_pulls (mode_sel, false, true) ;
-
-    // int i;
-    // for (i=0; i<sin_table_len; i++) {
-    //   // sine table is in 12 bit range
-    //   sine_table[i] = (short)(2040 * sin(2*3.1416*(float)i/sin_table_len) +
-    //   2048) ;
-    // }
-
-    // =======================
-    // choose station vs access point
-    // (receive vs send)
-    // int ap = AP;
-    // jumper gpio 2 high for 'send' mode
-    // start 'send' mode unit first!
-    // ap = gpio_get(mode_sel);
-    //
 
     // Initialize Wifi chip
     printf("Initializing cyw43...");
@@ -528,8 +257,6 @@ int main()
     }
 
     if (access_point) {
-        // mode = send;
-
         // Allocate TCP server state
         TCP_SERVER_T* state = calloc(1, sizeof(TCP_SERVER_T));
         printf("Allocating TCP server state...");
@@ -540,54 +267,46 @@ int main()
             printf("allocated!\n");
         }
 
-        // access point SSID and PASSWORD
-        // WPA2 authorization
-        const char* ap_name  = "picow_test";
-        const char* password = "password";
-
-        cyw43_arch_enable_ap_mode(ap_name, password, CYW43_AUTH_WPA2_AES_PSK);
+        // Turn on access point
+        cyw43_arch_enable_ap_mode(WIFI_SSID, WIFI_PASSWORD,
+                                  CYW43_AUTH_WPA2_AES_PSK);
         printf("Access point mode enabled!\n");
 
-        // 'state' is a pointer to type TCP_SERVER_T
-        // set up the access point IP address and mask
+        // The variable 'state' is a pointer to a TCP_SERVER_T struct
+        // Set up the access point IP address and mask
         ip4_addr_t mask;
         IP4_ADDR(ip_2_ip4(&state->gw), 192, 168, 4, 1);
         IP4_ADDR(ip_2_ip4(&mask), 255, 255, 255, 0);
 
-        // station address (as set below)
+        // Configure target IP address
         sprintf(udp_target_pico, "%s", STATION_ADDR);
 
-#ifdef auto_setup
-        paired = true;
-#endif
-
-        // Start the dhcp server
-        // Even though in the porgram DHCP is not required, LWIP
-        // seems to need it!
-        // and set picoW IP address from 'state' structure
-        // set 'mask' as defined above
+        // Start the Dynamic Host Configuration Protocol (DHCP) server. Even
+        // though in the program DHCP is not required, LWIP seems to need it!
+        //      - Bruce Land
+        //
+        // I believe that DHCP is what assigns the Pico-W client an initial IP
+        // address, which can be changed manually later.
+        //      - Chris
+        //
+        // Set the Pico-W IP address from the 'state' structure
+        // Set 'mask' as defined above
         dhcp_server_t dhcp_server;
         dhcp_server_init(&dhcp_server, &state->gw, &mask);
 
+        // Print IP address
         printf("My IPv4 addr = %s\n", ip4addr_ntoa(&state->gw));
 
     } else {
-        // mode = echo;
+        // If all Pico-Ws boot at the same time, this delay gives the access
+        // point time to setup before the client tries to connect.
         sleep_ms(1000);
-        // =======================
-        // // init the staTION network
-        // if (cyw43_arch_init()) {
-        //     printf("failed to initialise.\n");
-        //     return 1;
-        // }
 
-        // hook up to local WIFI
+        // Enable station mode
         cyw43_arch_enable_sta_mode();
         printf("Station mode enabled!\n");
 
-        // power managment
-        // cyw43_wifi_pm(&cyw43_state, CYW43_DEFAULT_PM & ~0xf);
-
+        // Connect to the access point
         printf("Connecting to Wi-Fi...");
         if (cyw43_arch_wifi_connect_timeout_ms(
                 WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 30000)) {
@@ -597,29 +316,25 @@ int main()
             printf("connected to Wi-Fi:\n\tSSID = %s\n\tPASS = %s\n", WIFI_SSID,
                    WIFI_PASSWORD);
 
-            // optional print addr
-            // printf("Connected: picoW IP addr: %s\n",
-            // ip4addr_ntoa(netif_ip4_addr(netif_list)));
-            // and use known ap target
+            // Print address assigned by DCHP
+            printf("Connected as: Pico-W IP addr: %s\n",
+                   ip4addr_ntoa(netif_ip4_addr(netif_list)));
+
+            // Configure target IP address
             sprintf(udp_target_pico, "%s", AP_ADDR);
-            // set local addr by overridding DHCP
+
+            // Set local address, override the address assigned by DHCP
             ip_addr_t ip;
             IP4_ADDR(&ip, 192, 168, 4, 10);
             netif_set_ipaddr(netif_default, &ip);
-            printf("Modified picoW IP addr to: %s\n",
+
+            // Print new local address
+            printf("Modified: new Pico-W IP addr: %s\n",
                    ip4addr_ntoa(netif_ip4_addr(netif_list)));
-
-            printf("My IPv4 addr = %s\n", ip4addr_ntoa(&ip));
-
-#ifdef auto_setup
-            paired = true;
-            play   = true;
-#endif
         }
     }
 
-    //============================
-    // set up UDP receive ISR handler
+    // Initialize UDP recv callback function
     printf("Initializing recv callback...");
     if (udpecho_raw_init()) {
         printf("receive callback failed to initialize.");
@@ -627,10 +342,9 @@ int main()
         printf("callback initialized!\n");
     }
 
-    // =====================================
-    // init the thread control semaphores
-    // for the send/receive
-    // recv semaphone is set by an ISR
+    // The threads use semaphores to signal each other when buffers are written.
+    // If a thread tries to aquire a semaphore that is unavailable, it yields to
+    // the next thread in the scheduler.
     printf("Initializing send/recv semaphores...\n");
     PT_SEM_INIT(&new_udp_send_s, 0);
     PT_SEM_INIT(&new_udp_recv_s, 0);
@@ -641,18 +355,15 @@ int main()
     // multicore_reset_core1();
     // multicore_launch_core1(&core1_main);
 
-    // === config threads ========================
-    // for core 0
-
-    printf("Starting Protothreads...\n\n");
+    // Start protothreads
+    printf("Starting Protothreads!");
     pt_add_thread(protothread_udp_recv);
     pt_add_thread(protothread_udp_send);
     pt_add_thread(protothread_serial);
-
-    //
-    // === initalize the scheduler ===============
     pt_schedule_start;
 
+    // De-initialize the cyw43 architecture.
     cyw43_arch_deinit();
+
     return 0;
 }
