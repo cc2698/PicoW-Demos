@@ -4,9 +4,15 @@
  * type into the serial terminal on either Pico-W and have the input printed out
  * on the other Pico-W's serial terminal.
  *
- * To show that multicore is possible in this application, I use Core 1 to flash
- * the LED when a UDP packet is received. The application uses three
- * protothreads (send, recv, and serial), all of which are executing on Core 0.
+ * To show that multicore is possible in this application, I use core 1 to turn
+ * on the LED when a UDP packet is received. The application uses four
+ * protothreads (send, recv, ack, and serial), all of which are executing on
+ * core 0.
+ *
+ * The reason I create separate constructs for sending and acknowledging is to
+ * avoid contention over the send_data buffer. If the threads were to execute in
+ * the following order: recv -> serial -> send, the serial thread might
+ * overwrite the ACK with the user input.
  *
  * Compiles into the following binaries:
  *  - udp_ap.uf2
@@ -37,8 +43,23 @@
 // DHCP
 #include "dhcpserver/dhcpserver.h"
 
-// Is this device an access point?
-int access_point = true;
+/*
+ *  DEBUGGING
+ */
+
+#define PRINT_ON_RECV
+#define PRINT_ON_SEND
+
+/*
+ *  UDP
+ */
+
+// Properties
+int access_point       = true;
+int packet_counter     = 0;
+char my_addr[20]       = "255.255.255.255";
+char dest_addr_str[20] = "255.255.255.255";
+static ip_addr_t dest_addr;
 
 // UDP constants
 #define UDP_PORT        4444 // Same port number on both devices
@@ -48,19 +69,23 @@ int access_point = true;
 #define AP_ADDR      "192.168.4.1"
 #define STATION_ADDR "192.168.4.10"
 #define MASK_ADDR    "255.255.255.0"
-char udp_target_pico[20] = "255.255.255.255";
-static ip_addr_t dest_addr;
 
 // Wifi name and password
 #define WIFI_SSID     "picow_test"
 #define WIFI_PASSWORD "password"
 
 // UDP send/recv constructs
-static struct udp_pcb* udp_recv_pcb;
-static struct udp_pcb* udp_send_pcb;
-char recv_data[UDP_MSG_LEN_MAX];
-char send_data[UDP_MSG_LEN_MAX];
+static struct udp_pcb *udp_send_pcb, *udp_recv_pcb;
+char send_data[UDP_MSG_LEN_MAX], recv_data[UDP_MSG_LEN_MAX];
 struct pt_sem new_udp_send_s, new_udp_recv_s;
+
+// UDP ack constructs
+char return_addr_str[20] = "255.255.255.255";
+static ip_addr_t return_addr;
+int return_ack_number;
+char return_timestamp[50];
+static struct udp_pcb* udp_ack_pcb;
+struct pt_sem new_udp_ack_s;
 
 // Bruce Land's TCP server structure. Stores metadata for an access point hosted
 // by a Pico-W. This includes the IPv4 address.
@@ -72,13 +97,37 @@ typedef struct TCP_SERVER_T_ {
 } TCP_SERVER_T;
 
 /*
+ *  PACKET HANDLING
+ */
+
+// Packet types
+#define NUM_PACKET_TYPES 2
+const char* packet_types[NUM_PACKET_TYPES] = {"data", "ack"};
+
+// Check if a string is a valid packet type
+int is_valid_packet_type(char* s)
+{
+    int valid = false;
+
+    // Search packet_types for a match
+    for (int i = 0; i < NUM_PACKET_TYPES; i++) {
+        if (strcmp(packet_types[i], s) == 0) {
+            valid = true;
+        }
+    }
+
+    return valid;
+}
+
+/*
  *  ALARM
  */
 
-// LED blink duration
+// Alarm ID and duration
+alarm_id_t led_alarm;
 #define ALARM_MS 750
 
-// Flag the LED to be turned on
+// Signal core 1 to turn the LED on
 volatile int led_flag = false;
 
 #define led_on()                                                               \
@@ -95,9 +144,7 @@ volatile int led_flag = false;
 int64_t alarm_callback(alarm_id_t id, void* user_data)
 {
     led_off();
-
-    // Returns 0 to not reschedule the alarm
-    return 0;
+    return 0; // Returns 0 to not reschedule the alarm
 }
 
 /*
@@ -178,38 +225,57 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
     udp_send_pcb->remote_port = UDP_PORT;
     udp_send_pcb->local_port  = UDP_PORT;
 
-    // Count the number of packets sent
-    static int counter = 0;
+    // Payload
+    static char buffer[UDP_MSG_LEN_MAX];
+    static int timestamp;
+    static int udp_send_length;
+
+    // Stores the address of the pbuf payload
+    static char* req;
+
+    // Error code
+    static err_t er;
 
     while (true) {
-        // Wait until the send buffer is written
+        // Wait until the buffer is written
         PT_SEM_WAIT(pt, &new_udp_send_s);
 
         // Assign target pico IP address
-        ipaddr_aton(udp_target_pico, &dest_addr);
+        ipaddr_aton(dest_addr_str, &dest_addr);
+
+        // Timestamp the packet
+        timestamp = time_us_64();
+
+        // Append header to the payload
+        sprintf(buffer, "%s;%s;%d;%d;%s", "data", my_addr, packet_counter,
+                timestamp, send_data);
 
         // Allocate pbuf
-        static int udp_send_length;
-        udp_send_length = strlen(send_data);
+        udp_send_length = strlen(buffer);
         struct pbuf* p =
             pbuf_alloc(PBUF_TRANSPORT, udp_send_length + 1, PBUF_RAM);
 
         // Clear the payload and write to it
-        char* req = (char*) p->payload; // Cast from void* to char*
+        req = (char*) p->payload; // Cast from void* to char*
         memset(req, 0, udp_send_length + 1);
-        memcpy(req, send_data, udp_send_length);
+        memcpy(req, buffer, udp_send_length);
 
-        // Print packet metadata
-        printf("\n| Send:\n|\tnum:  %d\n|\tdest: %s\n|\tmsg:  \"%s\"\n\n",
-               counter, udp_target_pico, send_data);
+#ifdef PRINT_ON_SEND
+        // Print formatted packet contents
+        printf("| Send:\n");
+        printf("|\tpayload: { %s }\n", buffer);
+        printf("|\tdest:    %s\n", dest_addr_str);
+        printf("|\tnum:     %d\n", packet_counter);
+        printf("|\tmsg:     %s\n", send_data);
+#endif
 
         // Send packet
         // cyw43_arch_lwip_begin();
-        err_t er = udp_sendto(udp_send_pcb, p, &dest_addr, UDP_PORT);
+        er = udp_sendto(udp_send_pcb, p, &dest_addr, UDP_PORT);
         // cyw43_arch_lwip_end();
 
         if (er == ERR_OK) {
-            counter++;
+            packet_counter++;
         } else {
             printf("Failed to send UDP packet! error=%d\n", er);
         }
@@ -224,21 +290,162 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
 }
 
 // ==================================================
-// udp recv thread
+// UDP recv thread
 // ==================================================
 static PT_THREAD(protothread_udp_recv(struct pt* pt))
 {
     PT_BEGIN(pt);
 
+    // Not strictly necessary, but the strtok() function is destructive of
+    // its inputs therefore we copy the recv buffer into a temporary
+    // variable to avoid messing with it directly.
+    static char tbuf[UDP_MSG_LEN_MAX];
+
+    // For tokenizing the packet
+    static char packet_type[10], src_addr[20], packet_num[10],
+        timestamp_str[40], msg[UDP_MSG_LEN_MAX];
+    static char* token;
+
+    // Timestamp when the packet was sent
+    static uint64_t timestamp;
+
+    static unsigned int rtt;
+
     while (true) {
-        // Wait until the recv buffer is written
+        // Wait until the buffer is written
         PT_SEM_WAIT(pt, &new_udp_recv_s);
 
-        // Print the contents of the recv buffer
-        printf("\n| Recv:\n|\tmsg:  \"%s\"\n\n", recv_data);
+        sprintf(tbuf, recv_data);
 
-        // Flag core 1 to turn on the LED
-        led_flag = true;
+        // Data or ACK
+        token = strtok(tbuf, ";");
+        strcpy(packet_type, token);
+
+        // Source IP address
+        token = strtok(NULL, ";");
+        strcpy(src_addr, token);
+
+        // ACK number
+        token = strtok(NULL, ";");
+        strcpy(packet_num, token);
+
+        // Timestamp
+        token = strtok(NULL, ";");
+        strcpy(timestamp_str, token);
+        timestamp = strtoull(timestamp_str, NULL, 10);
+
+        // If this packet is an ack, calculate the RTT
+        if (strcmp(packet_type, "ack") == 0) {
+            rtt = time_us_64() - timestamp;
+        }
+
+        // Contents
+        token = strtok(NULL, ";");
+        strcpy(msg, token);
+
+#ifdef PRINT_ON_RECV
+        // Print formatted packet contents
+        printf("| Recv:\n");
+        printf("|\tPayload: { %s }\n", recv_data);
+        printf("|\ttype:    %s\n", packet_type);
+        printf("|\tfrom:    %s\n", src_addr);
+        printf("|\tack:     %s\n", packet_num);
+        if (strcmp(packet_type, "data") == 0) {
+            printf("|\tmsg:     %s\n", msg);
+        } else if (strcmp(packet_type, "ack") == 0) {
+            printf("|\tRTT:     %dus\n", rtt);
+        }
+
+        // If the packet is invalid
+        if (!is_valid_packet_type(packet_type)) {
+            printf("> Unrecognized packet type: %s\n", packet_type);
+            printf(">\tPayload: { %s }\n", recv_data);
+        }
+#endif
+
+        // If data was received, respond with ACK
+        if (strcmp(packet_type, "data") == 0) {
+            // Assign return address and ACK number
+            strcpy(return_addr_str, src_addr);
+            strcpy(return_timestamp, timestamp_str);
+            return_ack_number = atoi(packet_num);
+
+            // Signal ACK thread
+            PT_SEM_SIGNAL(pt, &new_udp_ack_s);
+
+            // Flag core 1 to turn on the LED
+            led_flag = true;
+        }
+
+        PT_YIELD(pt);
+    }
+
+    PT_END(pt);
+}
+
+// ==================================================
+// UDP ack thread
+// ==================================================
+static PT_THREAD(protothread_udp_ack(struct pt* pt))
+{
+    PT_BEGIN(pt);
+
+    // Create a new UDP PCB
+    udp_ack_pcb = udp_new();
+
+    // Assign port numbers
+    udp_ack_pcb->remote_port = UDP_PORT;
+    udp_ack_pcb->local_port  = UDP_PORT;
+
+    // Payload
+    static char buffer[UDP_MSG_LEN_MAX];
+    static int udp_ack_length;
+
+    // Stores the address of the pbuf payload
+    static char* req;
+
+    // Error code
+    static err_t er;
+
+    while (true) {
+        // Wait until the buffer is written
+        PT_SEM_WAIT(pt, &new_udp_ack_s);
+
+        // Assign target pico IP address
+        ipaddr_aton(return_addr_str, &return_addr);
+
+        // Append header to the payload
+        sprintf(buffer, "%s;%s;%d;%s", "ack", my_addr, return_ack_number,
+                return_timestamp);
+
+        // Allocate pbuf
+        udp_ack_length = strlen(buffer);
+        struct pbuf* p =
+            pbuf_alloc(PBUF_TRANSPORT, udp_ack_length + 1, PBUF_RAM);
+
+        // Clear the payload and write to it
+        req = (char*) p->payload; // Cast from void* to char*
+        memset(req, 0, udp_ack_length + 1);
+        memcpy(req, buffer, udp_ack_length);
+
+#ifdef PRINT_ON_SEND
+        // Print formatted packet contents
+        printf("| Ack:\n");
+        printf("|\tPayload: { %s }\n", buffer);
+        printf("|\tdest:    %s\n", return_addr_str);
+        printf("|\tnum:     %d\n", return_ack_number);
+#endif
+        // Send packet
+        // cyw43_arch_lwip_begin();
+        er = udp_sendto(udp_ack_pcb, p, &return_addr, UDP_PORT);
+        // cyw43_arch_lwip_end();
+
+        if (er != ERR_OK) {
+            printf("Failed to send UDP ack! error=%d\n", er);
+        }
+
+        // Free the packet buffer
+        pbuf_free(p);
 
         PT_YIELD(pt);
     }
@@ -247,7 +454,7 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
 }
 
 // =================================================
-// input thread
+// Serial input thread
 // =================================================
 static PT_THREAD(protothread_serial(struct pt* pt))
 {
@@ -258,8 +465,6 @@ static PT_THREAD(protothread_serial(struct pt* pt))
         // slack for the async processes so that the output is in the correct
         // order (most of the time).
         //      - Bruce Land
-        //
-        // Idle for 100ms
         PT_YIELD_usec(1e5);
 
         // Spawn threads for non-blocking read/write
@@ -290,8 +495,9 @@ void core_1_main()
         if (led_flag) {
             led_on();
 
-            // Start alarm
-            add_alarm_in_ms(ALARM_MS, alarm_callback, NULL, false);
+            // Restart alarm
+            cancel_alarm(led_alarm);
+            led_alarm = add_alarm_in_ms(ALARM_MS, alarm_callback, NULL, false);
 
             // Reset flag
             led_flag = false;
@@ -353,7 +559,8 @@ int main()
         ipaddr_aton(MASK_ADDR, ip_2_ip4(&mask));
 
         // Configure target IP address
-        sprintf(udp_target_pico, "%s", STATION_ADDR);
+        sprintf(my_addr, AP_ADDR);
+        sprintf(dest_addr_str, "%s", STATION_ADDR);
 
         // Start the Dynamic Host Configuration Protocol (DHCP) server. Even
         // though in the program DHCP is not required, LwIP seems to need it!
@@ -395,7 +602,8 @@ int main()
                    ip4addr_ntoa(netif_ip4_addr(netif_list)));
 
             // Configure target IP address
-            sprintf(udp_target_pico, "%s", AP_ADDR);
+            sprintf(my_addr, STATION_ADDR);
+            sprintf(dest_addr_str, "%s", AP_ADDR);
 
             // Set local address, override the address assigned by DHCP
             ip_addr_t ip;
@@ -423,6 +631,7 @@ int main()
     printf("Initializing send/recv semaphores...\n");
     PT_SEM_INIT(&new_udp_send_s, 0);
     PT_SEM_INIT(&new_udp_recv_s, 0);
+    PT_SEM_INIT(&new_udp_ack_s, 0);
 
     // Launch multicore
     multicore_reset_core1();
@@ -432,6 +641,7 @@ int main()
     printf("Starting Protothreads on Core 0!\n");
     pt_add_thread(protothread_udp_recv);
     pt_add_thread(protothread_udp_send);
+    pt_add_thread(protothread_udp_ack);
     pt_add_thread(protothread_serial);
     pt_schedule_start;
 
