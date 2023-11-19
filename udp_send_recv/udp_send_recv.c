@@ -5,7 +5,6 @@
  */
 
 // C libraries
-#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,10 +18,7 @@
 #include "pt_cornell_rp2040_v1_1_2.h"
 
 // Lightweight IP
-#include "lwip/netif.h" // Included by lwip/udp.h
-#include "lwip/opt.h"   // Included by lwip/udp.h
-#include "lwip/pbuf.h"  // Included by lwip/udp.h
-#include "lwip/udp.h"
+#include "lwip/udp.h" // Includes other necessary LwIP libraries
 
 // DHCP
 #include "dhcpserver/dhcpserver.h"
@@ -78,7 +74,7 @@ void udp_recv_callback(void* arg, struct udp_pcb* upcb, struct pbuf* p,
         // Free the packet buffer
         pbuf_free(p);
 
-        // Signal that the recv buffer has been written
+        // Signal waiting threads
         PT_SEM_SIGNAL(pt, &new_udp_recv_s);
     } else {
         printf("ERROR: NULL pt in callback\n");
@@ -223,13 +219,12 @@ static PT_THREAD(protothread_serial(struct pt* pt))
         serial_write;
         serial_read;
 
-        // If the input buffer is non-empty
-        if (strcmp(pt_serial_in_buffer, "") != 0) {
-            // Write message to send buffer
-            memset(send_data, 0, UDP_MSG_LEN_MAX);
-            sprintf(send_data, "%s", pt_serial_in_buffer);
-            PT_SEM_SIGNAL(pt, &new_udp_send_s);
-        }
+        // Write message to send buffer
+        memset(send_data, 0, UDP_MSG_LEN_MAX);
+        sprintf(send_data, "%s", pt_serial_in_buffer);
+
+        // Signal waiting threads
+        PT_SEM_SIGNAL(pt, &new_udp_send_s);
     }
 
     PT_END(pt);
@@ -292,7 +287,7 @@ int main()
         sprintf(udp_target_pico, "%s", STATION_ADDR);
 
         // Start the Dynamic Host Configuration Protocol (DHCP) server. Even
-        // though in the program DHCP is not required, LWIP seems to need it!
+        // though in the program DHCP is not required, LwIP seems to need it!
         //      - Bruce Land
         //
         // I believe that DHCP is what assigns the Pico-W client an initial IP
