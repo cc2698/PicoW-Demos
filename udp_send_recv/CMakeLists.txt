@@ -31,38 +31,21 @@ target_sources(udp_ap PRIVATE
 		udp_send_recv.c
 		dhcpserver/dhcpserver.c
 )
-target_compile_definitions(udp_ap PRIVATE
-        AP
-)
+target_compile_definitions(udp_ap PRIVATE AP)
 target_include_directories(udp_ap PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
         ${CMAKE_CURRENT_LIST_DIR}/.. # for our common lwipopts
 		${CMAKE_CURRENT_LIST_DIR}/dhcpserver
 )
 target_link_libraries(udp_ap PRIVATE
-	pico_cyw43_arch
-	pico_cyw43_arch_lwip_threadsafe_background 
-	
-	pico_stdlib 
-	# pico_bootsel_via_double_reset 
-
-	# hardware_pwm
-	# hardware_pio 
-	# hardware_dma 
-	# hardware_adc 
-	# hardware_sync
-	# hardware_irq
-	# hardware_gpio
-	# hardware_spi
-    # hardware_clocks
-	# hardware_rtc
-	pico_multicore
+		pico_cyw43_arch
+		pico_cyw43_arch_lwip_threadsafe_background 
+		pico_stdlib
+		pico_multicore
 )
 pico_add_extra_outputs(udp_ap) # Generate UF2 output
 
-#######
-
-# Access point
+# Station
 add_executable(udp_station)
 pico_enable_stdio_usb(udp_station 0)
 pico_enable_stdio_uart(udp_station 1)
@@ -76,23 +59,10 @@ target_include_directories(udp_station PRIVATE
 		${CMAKE_CURRENT_LIST_DIR}/dhcpserver
 )
 target_link_libraries(udp_station PRIVATE
-	pico_cyw43_arch
-	pico_cyw43_arch_lwip_threadsafe_background 
-	
-	pico_stdlib 
-	# pico_bootsel_via_double_reset 
-
-	# hardware_pwm
-	# hardware_pio 
-	# hardware_dma 
-	# hardware_adc 
-	# hardware_sync
-	# hardware_irq
-	# hardware_gpio
-	# hardware_spi
-    # hardware_clocks
-	# hardware_rtc
-	pico_multicore
+		pico_cyw43_arch
+		pico_cyw43_arch_lwip_threadsafe_background 
+		pico_stdlib 
+		pico_multicore
 )
 pico_add_extra_outputs(udp_station) # Generate UF2 output
 
