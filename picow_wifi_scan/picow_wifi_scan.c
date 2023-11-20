@@ -4,6 +4,9 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
+// Understanding received signal strength indicator (RSSI):
+// https://www.metageek.com/training/resources/understanding-rssi/
+
 // C libraries
 #include <stdio.h>
 
