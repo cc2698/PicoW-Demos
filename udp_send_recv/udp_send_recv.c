@@ -271,7 +271,7 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
 
 #ifdef PRINT_ON_SEND
         // Print formatted packet contents
-        printf("| Send:\n");
+        printf("| Outgoing...\n");
         printf("|\tpayload: { %s }\n", buffer);
         printf("|\tdest:    %s\n", dest_addr_str);
         printf("|\tnum:     %d\n", packet_counter);
@@ -354,22 +354,26 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
 
 #ifdef PRINT_ON_RECV
         // Print formatted packet contents
-        printf("| Recv:\n");
-        printf("|\tPayload: { %s }\n", recv_data);
-        printf("|\ttype:    %s\n", packet_type);
-        printf("|\tfrom:    %s\n", src_addr);
-        printf("|\tack:     %s\n", packet_num);
-        if (strcmp(packet_type, "data") == 0) {
-            printf("|\tmsg:     %s\n", msg);
-        } else if (strcmp(packet_type, "ack") == 0) {
-            printf("|\tRTT:     %.2f ms\n", rtt_ms);
-        }
+        printf("| Incoming...\n");
+        if (is_valid_packet_type(packet_type)) {
+            // Universal packet data
+            printf("|\tPayload: { %s }\n", recv_data);
+            printf("|\ttype:    %s\n", packet_type);
+            printf("|\tfrom:    %s\n", src_addr);
+            printf("|\tack:     %s\n", packet_num);
 
-        // If the packet is invalid
-        if (!is_valid_packet_type(packet_type)) {
-            printf("> Unrecognized packet type: %s\n", packet_type);
-            printf(">\tPayload: { %s }\n", recv_data);
+            // Type specific data
+            if (strcmp(packet_type, "data") == 0) {
+                printf("|\tmsg:     %s\n", msg);
+            } else if (strcmp(packet_type, "ack") == 0) {
+                printf("|\tRTT:     %.2f ms\n", rtt_ms);
+            }
+        } else {
+            // Unrecognized type
+            printf("?\tPayload: { %s }\n", recv_data);
+            printf("?\ttype:    ???\n");
         }
+        printf("\n");
 #endif
 
         // If data was received, respond with ACK
@@ -439,7 +443,7 @@ static PT_THREAD(protothread_udp_ack(struct pt* pt))
 
 #ifdef PRINT_ON_SEND
         // Print formatted packet contents
-        printf("| Ack:\n");
+        printf("| Outgoing\n");
         printf("|\tPayload: { %s }\n", buffer);
         printf("|\tdest:    %s\n", return_addr_str);
         printf("|\tnum:     %d\n", return_ack_number);

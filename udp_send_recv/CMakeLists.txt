@@ -1,3 +1,4 @@
+
 # CMake version
 cmake_minimum_required(VERSION 3.12)
 
@@ -34,7 +35,6 @@ target_sources(udp_ap PRIVATE
 target_compile_definitions(udp_ap PRIVATE AP)
 target_include_directories(udp_ap PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
-        ${CMAKE_CURRENT_LIST_DIR}/.. # for our common lwipopts
 		${CMAKE_CURRENT_LIST_DIR}/dhcpserver
 )
 target_link_libraries(udp_ap PRIVATE
@@ -55,7 +55,6 @@ target_sources(udp_station PRIVATE
 )
 target_include_directories(udp_station PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
-        ${CMAKE_CURRENT_LIST_DIR}/.. # for our common lwipopts
 		${CMAKE_CURRENT_LIST_DIR}/dhcpserver
 )
 target_link_libraries(udp_station PRIVATE
