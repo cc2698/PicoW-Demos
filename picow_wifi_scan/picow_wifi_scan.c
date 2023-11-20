@@ -23,16 +23,23 @@
 static int scan_result(void* env, const cyw43_ev_scan_result_t* result)
 {
     if (result) {
-        // Compose MAC address
-        char bssid_str[40];
-        sprintf(bssid_str, "%02x:%02x:%02x:%02x:%02x:%02x", result->bssid[0],
-                result->bssid[1], result->bssid[2], result->bssid[3],
-                result->bssid[4], result->bssid[5]);
+        char header[10];
 
-        // Print results
-        printf("ssid: %-32s rssi: %4d chan: %3d mac: %s sec: %u\n",
-               result->ssid, result->rssi, result->channel, bssid_str,
-               result->auth_mode);
+        // Get first 5 characters of the SSID
+        *header = '\0';
+        strncat(header, result->ssid, 5);
+
+        if (strcmp(header, "picow") == 0) {
+            // Compose MAC address
+            char bssid_str[40];
+            sprintf(bssid_str, "%02x:%02x:%02x:%02x:%02x:%02x",
+                    result->bssid[0], result->bssid[1], result->bssid[2],
+                    result->bssid[3], result->bssid[4], result->bssid[5]);
+
+            printf("ssid: %-32s rssi: %4d chan: %3d mac: %s sec: %u\n",
+                   result->ssid, result->rssi, result->channel, bssid_str,
+                   result->auth_mode);
+        }
     }
 
     return 0;
@@ -69,7 +76,7 @@ int main()
         if (absolute_time_diff_us(get_absolute_time(), next_scan_time) < 0) {
             // Start a scan if no scan is in progress, otherwise wait 10s
             if (!scan_in_progress) {
-                // Scan options are currently ignored
+                // Scan options don't matter
                 cyw43_wifi_scan_options_t scan_options = {0};
 
                 // This function scans for nearby Wifi networks and runs the
@@ -83,14 +90,11 @@ int main()
                 } else {
                     printf("Failed to start scan: %d\n", err);
 
-                    // Wait 10s and scan again
+                    // Schedule the next scan
                     next_scan_time = make_timeout_time_ms(10000);
                 }
             } else if (!cyw43_wifi_scan_active(&cyw43_state)) {
-                // This case triggers if you've just finished a scan, but
-                // haven't reset the scan_in_progress flag yet
-
-                // Wait 10s and scan again
+                // Reset the flag and schedule the next scan
                 next_scan_time   = make_timeout_time_ms(10000);
                 scan_in_progress = false;
             }
