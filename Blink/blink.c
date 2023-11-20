@@ -9,20 +9,38 @@
 #include "pico/stdlib.h"
 
 // Blink interval (ms)
-#define INTERVAL 500
+#define INTERVAL 750
+
+#define led_on()                                                               \
+    do {                                                                       \
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);                         \
+    } while (0);
+
+#define led_off()                                                              \
+    do {                                                                       \
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);                         \
+    } while (0);
 
 int main()
 {
+    // Initialize all stdio types
     stdio_init_all();
+
+    // Initialize Wifi chip
+    printf("Initializing cyw43...");
     if (cyw43_arch_init()) {
-        printf("Wi-Fi init failed");
-        return -1;
+        printf("failed to initialise.\n");
+        return 1;
+    } else {
+        printf("initialized!\n");
     }
+
     while (true) {
         printf("Blink\n");
-        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
+
+        led_on();
         sleep_ms(INTERVAL);
-        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
+        led_off();
         sleep_ms(INTERVAL);
     }
 }
