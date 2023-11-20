@@ -64,11 +64,9 @@
  */
 
 // Properties
-int access_point       = true;
-int packet_counter     = 0;
-char my_addr[20]       = "255.255.255.255";
-char dest_addr_str[20] = "255.255.255.255";
-static ip_addr_t dest_addr;
+int access_point   = true;
+int packet_counter = 0;
+char my_addr[20]   = "255.255.255.255";
 
 // UDP constants
 #define UDP_PORT        4444 // Same port number on both devices
@@ -83,12 +81,19 @@ static ip_addr_t dest_addr;
 #define WIFI_SSID     "picow_test"
 #define WIFI_PASSWORD "password"
 
-// UDP send/recv constructs
-static struct udp_pcb *udp_send_pcb, *udp_recv_pcb;
-char send_data[UDP_MSG_LEN_MAX], recv_data[UDP_MSG_LEN_MAX];
-struct pt_sem new_udp_send_s, new_udp_recv_s;
+// UDP send
+static struct udp_pcb* udp_recv_pcb;
+char recv_data[UDP_MSG_LEN_MAX];
+struct pt_sem new_udp_recv_s;
 
-// UDP ack constructs
+// UDP recv
+char dest_addr_str[20] = "255.255.255.255";
+static ip_addr_t dest_addr;
+static struct udp_pcb* udp_send_pcb;
+char send_data[UDP_MSG_LEN_MAX];
+struct pt_sem new_udp_send_s;
+
+// UDP ack
 char return_addr_str[20] = "255.255.255.255";
 static ip_addr_t return_addr;
 int return_ack_number;
