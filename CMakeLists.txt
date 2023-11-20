@@ -16,6 +16,7 @@ pico_sdk_init()
 add_subdirectory(Blink)
 add_subdirectory(Access_Point)
 add_subdirectory(udp_send_recv)
+add_subdirectory(picow_wifi_scan)
 
 add_compile_options(-Wall
         -Wno-format          # int != int32_t as far as the compiler is concerned because gcc has int32_t as long int
