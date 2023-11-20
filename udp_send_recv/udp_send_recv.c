@@ -58,6 +58,7 @@
 
 #define PRINT_ON_RECV
 #define PRINT_ON_SEND
+#define TEST_PACKET
 
 /*
  *  UDP
@@ -263,6 +264,14 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
         // Append header to the payload
         sprintf(buffer, "%s;%s;%d;%lu;%s", "data", my_addr, packet_counter,
                 timestamp, send_data);
+
+#ifdef TEST_PACKET
+        // Send a test packet with no header, lets you test how the system
+        // responds to an unrecognizable packet type
+        if (strcmp(send_data, "???") == 0) {
+            strcpy(buffer, "Test packet with no header.");
+        }
+#endif
 
         // Allocate pbuf
         udp_send_length = strlen(buffer);
@@ -541,7 +550,7 @@ int main()
     access_point = false;
 #endif
 
-    // Printout whether you're an AP or a station
+    // Print out whether you're an AP or a station
     printf("\n\n==================== %s ====================\n\n",
            (access_point ? "Access Point" : "Station"));
 
@@ -657,8 +666,8 @@ int main()
 
     // Start protothreads
     printf("Starting Protothreads on Core 0!\n");
-    pt_add_thread(protothread_udp_recv);
     pt_add_thread(protothread_udp_send);
+    pt_add_thread(protothread_udp_recv);
     pt_add_thread(protothread_udp_ack);
     pt_add_thread(protothread_serial);
     pt_schedule_start;
