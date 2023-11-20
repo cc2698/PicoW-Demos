@@ -1,4 +1,7 @@
 
+# Set PICO_BOARD environment variable to "pico_w"
+set(PICO_BOARD pico_w)
+
 add_executable(picow_wifi_scan_background
         picow_wifi_scan.c
         )
