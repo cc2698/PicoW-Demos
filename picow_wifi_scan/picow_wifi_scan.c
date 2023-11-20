@@ -4,76 +4,94 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
+// C libraries
 #include <stdio.h>
 
+// Pico
 #include "pico/cyw43_arch.h"
 #include "pico/stdlib.h"
+#include "pico/types.h"
 
-static int scan_result(void* env, const cyw43_ev_scan_result_t* result)
-{
-    if (result) {
-        printf("ssid: %-32s rssi: %4d chan: %3d mac: "
-               "%02x:%02x:%02x:%02x:%02x:%02x sec: %u\n",
-               result->ssid, result->rssi, result->channel, result->bssid[0],
-               result->bssid[1], result->bssid[2], result->bssid[3],
-               result->bssid[4], result->bssid[5], result->auth_mode);
-    }
-    return 0;
-}
-
+// Hardware
 #include "hardware/clocks.h"
 #include "hardware/vreg.h"
 
-int main()
+// Wifi scan callback function, prints cyw43_ev_scan_result_t as a string
+static int scan_result(void* env, const cyw43_ev_scan_result_t* result)
 {
-    stdio_init_all();
+    if (result) {
+        // Compose MAC address
+        char bssid_str[40];
+        sprintf(bssid_str, "%02x:%02x:%02x:%02x:%02x:%02x", result->bssid[0],
+                result->bssid[1], result->bssid[2], result->bssid[3],
+                result->bssid[4], result->bssid[5]);
 
-    if (cyw43_arch_init()) {
-        printf("failed to initialise\n");
-        return 1;
+        // Print results
+        printf("ssid: %-32s rssi: %4d chan: %3d mac: %s sec: %u\n",
+               result->ssid, result->rssi, result->channel, bssid_str,
+               result->auth_mode);
     }
 
+    return 0;
+}
+
+int main()
+{
+    // Initialize all stdio types
+    stdio_init_all();
+
+    // Print header
+    printf("\n\n==================== %s ====================\n\n",
+           "Wifi Scanner");
+
+    // Initialize Wifi chip
+    printf("Initializing cyw43...");
+    if (cyw43_arch_init()) {
+        printf("failed to initialise.\n");
+        return 1;
+    } else {
+        printf("initialized!\n");
+    }
+
+    // Enable station mode
     cyw43_arch_enable_sta_mode();
 
-    absolute_time_t scan_time = nil_time;
-    bool scan_in_progress     = false;
+    // Time of next scan
+    absolute_time_t next_scan_time = nil_time;
+
+    int scan_in_progress = false;
+
     while (true) {
-        if (absolute_time_diff_us(get_absolute_time(), scan_time) < 0) {
+        // If past the time of next scan
+        if (absolute_time_diff_us(get_absolute_time(), next_scan_time) < 0) {
+            // Start a scan if no scan is in progress, otherwise wait 10s
             if (!scan_in_progress) {
+                // Scan options are currently ignored
                 cyw43_wifi_scan_options_t scan_options = {0};
+
+                // This function scans for nearby Wifi networks and runs the
+                // callback function each time a network is found.
                 int err = cyw43_wifi_scan(&cyw43_state, &scan_options, NULL,
                                           scan_result);
+
                 if (err == 0) {
                     printf("\nPerforming wifi scan\n");
                     scan_in_progress = true;
                 } else {
                     printf("Failed to start scan: %d\n", err);
-                    scan_time =
-                        make_timeout_time_ms(10000); // wait 10s and scan again
+
+                    // Wait 10s and scan again
+                    next_scan_time = make_timeout_time_ms(10000);
                 }
             } else if (!cyw43_wifi_scan_active(&cyw43_state)) {
-                scan_time =
-                    make_timeout_time_ms(10000); // wait 10s and scan again
+                // This case triggers if you've just finished a scan, but
+                // haven't reset the scan_in_progress flag yet
+
+                // Wait 10s and scan again
+                next_scan_time   = make_timeout_time_ms(10000);
                 scan_in_progress = false;
             }
         }
-        // the following #ifdef is only here so this same example can be used in
-        // multiple modes; you do not need it in your code
-#if PICO_CYW43_ARCH_POLL
-        // if you are using pico_cyw43_arch_poll, then you must poll
-        // periodically from your main loop (not from a timer) to check for
-        // Wi-Fi driver or lwIP work that needs to be done.
-        cyw43_arch_poll();
-        // you can poll as often as you like, however if you have nothing else
-        // to do you can choose to sleep until either a specified time, or
-        // cyw43_arch_poll() has work to do:
-        cyw43_arch_wait_for_work_until(scan_time);
-#else
-        // if you are not using pico_cyw43_arch_poll, then WiFI driver and lwIP
-        // work is done via interrupt in the background. This sleep is just an
-        // example of some (blocking) work you might be doing.
-        sleep_ms(1000);
-#endif
     }
 
     cyw43_arch_deinit();
