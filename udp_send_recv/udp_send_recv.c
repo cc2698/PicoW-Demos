@@ -119,6 +119,9 @@ typedef struct TCP_SERVER_T_ {
 #define NUM_PACKET_TYPES 2
 const char* packet_types[NUM_PACKET_TYPES] = {"data", "ack"};
 
+// Max length of header fields
+#define TOK_LEN 40
+
 // Check if a string is a valid packet type
 int is_valid_packet_type(char* s)
 {
@@ -269,7 +272,8 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
         // Send a test packet with no header, lets you test how the system
         // responds to an unrecognizable packet type
         if (strcmp(send_data, "???") == 0) {
-            strcpy(buffer, "Test packet with no header.");
+            strcpy(buffer, "Incredibly long test packet with an unrecognizable "
+                           "header that cannot be parsed by the recv thread.");
         }
 #endif
 
@@ -290,6 +294,7 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
         printf("|\tdest:    %s\n", dest_addr_str);
         printf("|\tnum:     %d\n", packet_counter);
         printf("|\tmsg:     %s\n", send_data);
+        printf("\n");
 #endif
 
         // Send packet
@@ -312,6 +317,15 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
     PT_END(pt);
 }
 
+void copy_field(char* field, char* token)
+{
+    if (token == NULL) {
+        snprintf(field, TOK_LEN, "n/a");
+    } else {
+        snprintf(field, TOK_LEN, "%s", token);
+    }
+}
+
 // ==================================================
 // UDP recv thread
 // ==================================================
@@ -325,8 +339,11 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
     static char tbuf[UDP_MSG_LEN_MAX];
 
     // For tokenizing the packet
-    static char packet_type[10], src_addr[20], packet_num[10],
-        timestamp_str[40], msg[UDP_MSG_LEN_MAX];
+    static char packet_type[TOK_LEN];
+    static char src_addr[TOK_LEN];
+    static char packet_num[TOK_LEN];
+    static char timestamp_str[TOK_LEN];
+    static char msg[UDP_MSG_LEN_MAX];
     static char* token;
 
     // Timestamp when the packet was sent
@@ -342,50 +359,46 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
 
         // Data or ACK
         token = strtok(tbuf, ";");
-        strcpy(packet_type, token);
+        copy_field(packet_type, token);
 
         // Source IP address
         token = strtok(NULL, ";");
-        strcpy(src_addr, token);
+        copy_field(src_addr, token);
 
         // ACK number
         token = strtok(NULL, ";");
-        strcpy(packet_num, token);
+        copy_field(packet_num, token);
 
         // Timestamp
         token = strtok(NULL, ";");
-        strcpy(timestamp_str, token);
-        timestamp = strtoull(timestamp_str, NULL, 10);
+        copy_field(timestamp_str, token);
 
-        // If this packet is an ack, calculate the RTT
-        if (strcmp(packet_type, "ack") == 0) {
-            rtt_ms = (time_us_64() - timestamp) / 1000.0f;
+        if (strcmp(timestamp_str, "n/a") != 0) {
+            timestamp = strtoull(timestamp_str, NULL, 10);
+
+            // If this packet is an ack, calculate the RTT
+            if (strcmp(packet_type, "ack") == 0) {
+                rtt_ms = (time_us_64() - timestamp) / 1000.0f;
+            }
         }
 
         // Contents
         token = strtok(NULL, ";");
-        strcpy(msg, token);
+        copy_field(msg, token);
 
 #ifdef PRINT_ON_RECV
         // Print formatted packet contents
         printf("| Incoming...\n");
-        if (is_valid_packet_type(packet_type)) {
-            // Universal packet data
-            printf("|\tPayload: { %s }\n", recv_data);
-            printf("|\ttype:    %s\n", packet_type);
-            printf("|\tfrom:    %s\n", src_addr);
-            printf("|\tack:     %s\n", packet_num);
-
-            // Type specific data
-            if (strcmp(packet_type, "data") == 0) {
-                printf("|\tmsg:     %s\n", msg);
-            } else if (strcmp(packet_type, "ack") == 0) {
-                printf("|\tRTT:     %.2f ms\n", rtt_ms);
-            }
+        printf("|\tPayload: { %s }\n", recv_data);
+        printf("|\ttype:    %s\n", packet_type);
+        printf("|\tfrom:    %s\n", src_addr);
+        printf("|\tack:     %s\n", packet_num);
+        if (strcmp(packet_type, "data") == 0) {
+            printf("|\tmsg:     %s\n", msg);
+        } else if (strcmp(packet_type, "ack") == 0) {
+            printf("|\tRTT:     %.2f ms\n", rtt_ms);
         } else {
-            // Unrecognized type
-            printf("?\tPayload: { %s }\n", recv_data);
-            printf("?\ttype:    ???\n");
+            printf("|\tmsg:     %s\n", msg);
         }
         printf("\n");
 #endif
@@ -457,10 +470,11 @@ static PT_THREAD(protothread_udp_ack(struct pt* pt))
 
 #ifdef PRINT_ON_SEND
         // Print formatted packet contents
-        printf("| Outgoing\n");
+        printf("| Outgoing...\n");
         printf("|\tPayload: { %s }\n", buffer);
         printf("|\tdest:    %s\n", return_addr_str);
         printf("|\tnum:     %d\n", return_ack_number);
+        printf("\n");
 #endif
         // Send packet
         // cyw43_arch_lwip_begin();
