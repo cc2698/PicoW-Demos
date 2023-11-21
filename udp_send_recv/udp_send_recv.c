@@ -137,6 +137,21 @@ int is_valid_packet_type(char* s)
     return valid;
 }
 
+// Copy a token into a header field.
+void copy_field(char* field, char* token)
+{
+    // I use snprintf() here because it is extremely dangerous if a header field
+    // gets written without a NULL terminator, which could happen if the token
+    // exceeds the length of the buffer. The undefined behavior causes
+    // non-reproducible bugs, usually ending with the Pico-W freezing.
+
+    if (token == NULL) {
+        snprintf(field, TOK_LEN, "n/a");
+    } else {
+        snprintf(field, TOK_LEN, "%s", token);
+    }
+}
+
 /*
  *  ALARM
  */
@@ -315,15 +330,6 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
     }
 
     PT_END(pt);
-}
-
-void copy_field(char* field, char* token)
-{
-    if (token == NULL) {
-        snprintf(field, TOK_LEN, "n/a");
-    } else {
-        snprintf(field, TOK_LEN, "%s", token);
-    }
 }
 
 // ==================================================
