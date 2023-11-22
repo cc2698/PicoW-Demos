@@ -427,6 +427,8 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
                 send_buffer.ip_addr, send_buffer.ack_number,
                 send_buffer.timestamp, send_buffer.msg);
 
+        mutex_exit(&send_mutex);
+
         // Allocate pbuf
         udp_send_length = strlen(buffer);
         struct pbuf* p =
@@ -446,8 +448,6 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
         printf("|\tmsg:     %s\n", send_buffer.msg);
         printf("\n");
 #endif
-
-        mutex_exit(&send_mutex);
 
         // Send packet
         // cyw43_arch_lwip_begin();
