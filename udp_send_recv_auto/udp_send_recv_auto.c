@@ -131,16 +131,6 @@ static int scan_callback(void* env, const cyw43_ev_scan_result_t* result)
         *header = '\0';
         snprintf(header, 6, "%s", result->ssid);
 
-        // // Compose MAC address
-        // char bssid_str[40];
-        // sprintf(bssid_str, "%02x:%02x:%02x:%02x:%02x:%02x", result->bssid[0],
-        //         result->bssid[1], result->bssid[2], result->bssid[3],
-        //         result->bssid[4], result->bssid[5]);
-
-        // printf("ssid: %-32s rssi: %4d chan: %3d mac: %s sec: %u\n",
-        //        result->ssid, result->rssi, result->channel, bssid_str,
-        //        result->auth_mode);
-
         if (strcmp(header, "picow") == 0) {
             // Compose MAC address
             char bssid_str[40];
@@ -225,6 +215,33 @@ void copy_field(char* field, char* token)
 }
 
 /*
+ *  LED
+ */
+
+#define HIGH 1
+#define LOW  0
+
+volatile int led_state = LOW;
+
+#define led_on()                                                               \
+    do {                                                                       \
+        led_state = HIGH;                                                      \
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_state);                 \
+    } while (0);
+
+#define led_off()                                                              \
+    do {                                                                       \
+        led_state = LOW;                                                       \
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_state);                 \
+    } while (0);
+
+#define led_toggle()                                                           \
+    do {                                                                       \
+        led_state = !led_state;                                                \
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_state);                 \
+    } while (0);
+
+/*
  *  ALARM
  */
 
@@ -234,16 +251,6 @@ alarm_id_t led_alarm;
 
 // Signal core 1 to turn the LED on
 volatile int led_flag = false;
-
-#define led_on()                                                               \
-    do {                                                                       \
-        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);                         \
-    } while (0);
-
-#define led_off()                                                              \
-    do {                                                                       \
-        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);                         \
-    } while (0);
 
 // Alarm callback function
 int64_t alarm_callback(alarm_id_t id, void* user_data)
