@@ -37,6 +37,7 @@
 #include "boards/pico_w.h"
 #include "pico/cyw43_arch.h"
 #include "pico/multicore.h"
+#include "pico/mutex.h"
 #include "pico/stdlib.h"
 
 // Hardware
@@ -193,6 +194,7 @@ typedef struct outgoing_packet {
     char msg[UDP_MSG_LEN_MAX];
 } packet_t;
 
+struct mutex send_mutex, ack_mutex;
 packet_t send_buffer, ack_buffer;
 
 packet_t compose_packet(char* type, char* addr, int ack, uint64_t t, char* m)
@@ -418,6 +420,8 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
         // // Timestamp the packet
         // timestamp = time_us_64();
 
+        mutex_enter_blocking(&send_mutex);
+
         // Append header to the payload
         sprintf(buffer, "%s;%s;%d;%llu;%s", send_buffer.packet_type,
                 send_buffer.ip_addr, send_buffer.ack_number,
@@ -442,6 +446,8 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
         printf("|\tmsg:     %s\n", send_buffer.msg);
         printf("\n");
 #endif
+
+        mutex_exit(&send_mutex);
 
         // Send packet
         // cyw43_arch_lwip_begin();
@@ -552,8 +558,10 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
             // strcpy(return_timestamp, timestamp_str);
             // return_ack_number = atoi(packet_num);
 
+            mutex_enter_blocking(&ack_mutex);
             ack_buffer = compose_packet("ack", my_addr, recv_buf.ack_number,
                                         recv_buf.timestamp, "");
+            mutex_exit(&ack_mutex);
 
             // Signal ACK thread
             PT_SEM_SIGNAL(pt, &new_udp_ack_s);
@@ -599,6 +607,8 @@ static PT_THREAD(protothread_udp_ack(struct pt* pt))
         // Assign target pico IP address
         ipaddr_aton(return_addr_str, &return_addr);
 
+        mutex_enter_blocking(&ack_mutex);
+
         // Append header to the payload
         sprintf(buffer, "%s;%s;%d;%llu", ack_buffer.packet_type,
                 ack_buffer.ip_addr, ack_buffer.ack_number,
@@ -622,6 +632,9 @@ static PT_THREAD(protothread_udp_ack(struct pt* pt))
         printf("|\tnum:     %d\n", ack_buffer.ack_number);
         printf("\n");
 #endif
+
+        mutex_exit(&ack_mutex);
+
         // Send packet
         // cyw43_arch_lwip_begin();
         er = udp_sendto(udp_ack_pcb, p, &return_addr, UDP_PORT);
@@ -659,8 +672,10 @@ static PT_THREAD(protothread_serial(struct pt* pt))
         // Spawn thread for non-blocking read
         serial_read;
 
+        mutex_enter_blocking(&send_mutex);
         send_buffer = compose_packet("data", my_addr, packet_counter,
                                      time_us_64(), pt_serial_in_buffer);
+        mutex_exit(&send_mutex);
 
         // Write message to send buffer
         // memset(send_data, 0, UDP_MSG_LEN_MAX);
@@ -824,9 +839,12 @@ int main()
         printf("callback initialized!\n");
     }
 
-    // The threads use semaphores to signal each other when buffers are written.
-    // If a thread tries to aquire a semaphore that is unavailable, it yields to
-    // the next thread in the scheduler.
+    mutex_init(&send_mutex);
+    mutex_init(&ack_mutex);
+
+    // The threads use semaphores to signal each other when buffers are
+    // written. If a thread tries to aquire a semaphore that is unavailable,
+    // it yields to the next thread in the scheduler.
     printf("Initializing send/recv semaphores...\n");
     PT_SEM_INIT(&new_udp_send_s, 0);
     PT_SEM_INIT(&new_udp_recv_s, 0);
