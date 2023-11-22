@@ -168,7 +168,7 @@ int find_target()
         return 1;
     }
 
-    sleep_ms(10000);
+    sleep_ms(5000);
 
     return 0;
 }
@@ -183,6 +183,30 @@ const char* packet_types[NUM_PACKET_TYPES] = {"data", "ack"};
 
 // Max length of header fields
 #define TOK_LEN 40
+
+// Structure that stores an outgoing packet
+typedef struct outgoing_packet {
+    char packet_type[TOK_LEN];
+    char ip_addr[TOK_LEN];
+    int ack_number;
+    uint64_t timestamp;
+    char msg[UDP_MSG_LEN_MAX];
+} packet_t;
+
+packet_t send_buffer, ack_buffer;
+
+packet_t compose_packet(char* type, char* addr, int ack, uint64_t t, char* m)
+{
+    packet_t op;
+
+    snprintf(op.packet_type, TOK_LEN, "%s", type);
+    snprintf(op.ip_addr, TOK_LEN, "%s", addr);
+    op.ack_number = ack;
+    op.timestamp  = t;
+    snprintf(op.msg, UDP_MSG_LEN_MAX, "%s", m);
+
+    return op;
+}
 
 // Check if a string is a valid packet type
 int is_valid_packet_type(char* s)
@@ -212,6 +236,46 @@ void copy_field(char* field, char* token)
     } else {
         snprintf(field, TOK_LEN, "%s", token);
     }
+}
+
+packet_t string_to_packet(char* s)
+{
+    char tbuf[UDP_MSG_LEN_MAX];
+    packet_t op;
+
+    sprintf(tbuf, s);
+
+    char* token;
+
+    // Data or ACK
+    token = strtok(tbuf, ";");
+    copy_field(op.packet_type, token);
+
+    // Source IP address
+    token = strtok(NULL, ";");
+    copy_field(op.ip_addr, token);
+
+    // ACK number
+    char ack_number_str[TOK_LEN];
+    token = strtok(NULL, ";");
+    copy_field(ack_number_str, token);
+    if (strcmp(ack_number_str, "n/a") != 0) {
+        op.ack_number = atoi(ack_number_str);
+    }
+
+    // Timestamp
+    char timestamp_str[TOK_LEN];
+    token = strtok(NULL, ";");
+    copy_field(timestamp_str, token);
+    if (strcmp(timestamp_str, "n/a") != 0) {
+        op.timestamp = strtoull(timestamp_str, NULL, 10);
+    }
+
+    // Contents
+    token = strtok(NULL, ";");
+    copy_field(op.msg, token);
+
+    return op;
 }
 
 /*
@@ -348,24 +412,16 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
         // Wait until the buffer is written
         PT_SEM_WAIT(pt, &new_udp_send_s);
 
-        // Assign target pico IP address
+        // Assign target pico IP address, string -> ip_addr_t
         ipaddr_aton(dest_addr_str, &dest_addr);
 
-        // Timestamp the packet
-        timestamp = time_us_64();
+        // // Timestamp the packet
+        // timestamp = time_us_64();
 
         // Append header to the payload
-        sprintf(buffer, "%s;%s;%d;%lu;%s", "data", my_addr, packet_counter,
-                timestamp, send_data);
-
-#ifdef TEST_PACKET
-        // Send a test packet with no header, lets you test how the system
-        // responds to an unrecognizable packet type
-        if (strcmp(send_data, "???") == 0) {
-            strcpy(buffer, "Incredibly long test packet with an unrecognizable "
-                           "header that cannot be parsed by the recv thread.");
-        }
-#endif
+        sprintf(buffer, "%s;%s;%d;%llu;%s", send_buffer.packet_type,
+                send_buffer.ip_addr, send_buffer.ack_number,
+                send_buffer.timestamp, send_buffer.msg);
 
         // Allocate pbuf
         udp_send_length = strlen(buffer);
@@ -381,9 +437,9 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
         // Print formatted packet contents
         printf("| Outgoing...\n");
         printf("|\tpayload: { %s }\n", buffer);
-        printf("|\tdest:    %s\n", dest_addr_str);
-        printf("|\tnum:     %d\n", packet_counter);
-        printf("|\tmsg:     %s\n", send_data);
+        printf("|\tdest:    %s\n", send_buffer.ip_addr);
+        printf("|\tnum:     %d\n", send_buffer.ack_number);
+        printf("|\tmsg:     %s\n", send_buffer.msg);
         printf("\n");
 #endif
 
@@ -432,64 +488,72 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
 
     static float rtt_ms;
 
+    static packet_t recv_buf;
+
     while (true) {
         // Wait until the buffer is written
         PT_SEM_WAIT(pt, &new_udp_recv_s);
 
-        sprintf(tbuf, recv_data);
+        // sprintf(tbuf, recv_data);
 
-        // Data or ACK
-        token = strtok(tbuf, ";");
-        copy_field(packet_type, token);
+        // // Data or ACK
+        // token = strtok(tbuf, ";");
+        // copy_field(packet_type, token);
 
-        // Source IP address
-        token = strtok(NULL, ";");
-        copy_field(src_addr, token);
+        // // Source IP address
+        // token = strtok(NULL, ";");
+        // copy_field(src_addr, token);
 
-        // ACK number
-        token = strtok(NULL, ";");
-        copy_field(packet_num, token);
+        // // ACK number
+        // token = strtok(NULL, ";");
+        // copy_field(packet_num, token);
 
-        // Timestamp
-        token = strtok(NULL, ";");
-        copy_field(timestamp_str, token);
+        // // Timestamp
+        // token = strtok(NULL, ";");
+        // copy_field(timestamp_str, token);
 
-        if (strcmp(timestamp_str, "n/a") != 0) {
-            timestamp = strtoull(timestamp_str, NULL, 10);
+        // if (strcmp(timestamp_str, "n/a") != 0) {
+        //     timestamp = strtoull(timestamp_str, NULL, 10);
 
-            // If this packet is an ack, calculate the RTT
-            if (strcmp(packet_type, "ack") == 0) {
-                rtt_ms = (time_us_64() - timestamp) / 1000.0f;
-            }
-        }
+        //     // If this packet is an ack, calculate the RTT
+        //     if (strcmp(packet_type, "ack") == 0) {
+        //         rtt_ms = (time_us_64() - timestamp) / 1000.0f;
+        //     }
+        // }
 
-        // Contents
-        token = strtok(NULL, ";");
-        copy_field(msg, token);
+        // // Contents
+        // token = strtok(NULL, ";");
+        // copy_field(msg, token);
+
+        recv_buf = string_to_packet(recv_data);
 
 #ifdef PRINT_ON_RECV
         // Print formatted packet contents
         printf("| Incoming...\n");
         printf("|\tPayload: { %s }\n", recv_data);
-        printf("|\ttype:    %s\n", packet_type);
-        printf("|\tfrom:    %s\n", src_addr);
-        printf("|\tack:     %s\n", packet_num);
-        if (strcmp(packet_type, "data") == 0) {
-            printf("|\tmsg:     %s\n", msg);
-        } else if (strcmp(packet_type, "ack") == 0) {
+        printf("|\ttype:    %s\n", recv_buf.packet_type);
+        printf("|\tfrom:    %s\n", recv_buf.ip_addr);
+        printf("|\tack:     %d\n", recv_buf.ack_number);
+        if (strcmp(recv_buf.packet_type, "data") == 0) {
+            printf("|\tmsg:     %s\n", recv_buf.msg);
+        } else if (strcmp(recv_buf.packet_type, "ack") == 0) {
+            float rtt_ms = (time_us_64() - recv_buf.timestamp) / 1000.0f;
             printf("|\tRTT:     %.2f ms\n", rtt_ms);
         } else {
-            printf("|\tmsg:     %s\n", msg);
+            printf("|\tmsg:     %s\n", recv_buf.msg);
         }
         printf("\n");
 #endif
 
         // If data was received, respond with ACK
-        if (strcmp(packet_type, "data") == 0) {
-            // Assign return address and ACK number
-            strcpy(return_addr_str, src_addr);
-            strcpy(return_timestamp, timestamp_str);
-            return_ack_number = atoi(packet_num);
+        if (strcmp(recv_buf.packet_type, "data") == 0) {
+            // // Assign return address and ACK number
+            strcpy(return_addr_str, recv_buf.ip_addr);
+            // strcpy(return_timestamp, timestamp_str);
+            // return_ack_number = atoi(packet_num);
+
+            ack_buffer = compose_packet("ack", my_addr, recv_buf.ack_number,
+                                        recv_buf.timestamp, "");
 
             // Signal ACK thread
             PT_SEM_SIGNAL(pt, &new_udp_ack_s);
@@ -536,8 +600,9 @@ static PT_THREAD(protothread_udp_ack(struct pt* pt))
         ipaddr_aton(return_addr_str, &return_addr);
 
         // Append header to the payload
-        sprintf(buffer, "%s;%s;%d;%s", "ack", my_addr, return_ack_number,
-                return_timestamp);
+        sprintf(buffer, "%s;%s;%d;%llu", ack_buffer.packet_type,
+                ack_buffer.ip_addr, ack_buffer.ack_number,
+                ack_buffer.timestamp);
 
         // Allocate pbuf
         udp_ack_length = strlen(buffer);
@@ -554,7 +619,7 @@ static PT_THREAD(protothread_udp_ack(struct pt* pt))
         printf("| Outgoing...\n");
         printf("|\tPayload: { %s }\n", buffer);
         printf("|\tdest:    %s\n", return_addr_str);
-        printf("|\tnum:     %d\n", return_ack_number);
+        printf("|\tnum:     %d\n", ack_buffer.ack_number);
         printf("\n");
 #endif
         // Send packet
@@ -582,6 +647,8 @@ static PT_THREAD(protothread_serial(struct pt* pt))
 {
     PT_BEGIN(pt);
 
+    struct outgoing_packet outpack;
+
     while (true) {
         // Yielding here is not strictly necessary but it gives a little bit of
         // slack for the async processes so that the output is in the correct
@@ -589,13 +656,15 @@ static PT_THREAD(protothread_serial(struct pt* pt))
         //      - Bruce Land
         PT_YIELD_usec(1e5);
 
-        // Spawn threads for non-blocking read/write
-        serial_write;
+        // Spawn thread for non-blocking read
         serial_read;
 
+        send_buffer = compose_packet("data", my_addr, packet_counter,
+                                     time_us_64(), pt_serial_in_buffer);
+
         // Write message to send buffer
-        memset(send_data, 0, UDP_MSG_LEN_MAX);
-        sprintf(send_data, "%s", pt_serial_in_buffer);
+        // memset(send_data, 0, UDP_MSG_LEN_MAX);
+        // sprintf(send_data, "%s", pt_serial_in_buffer);
 
         // Signal waiting threads
         PT_SEM_SIGNAL(pt, &new_udp_send_s);
