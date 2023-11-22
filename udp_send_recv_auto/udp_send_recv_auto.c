@@ -112,6 +112,78 @@ typedef struct TCP_SERVER_T_ {
 } TCP_SERVER_T;
 
 /*
+ *  WIFI SCANNING
+ */
+
+// Maximum acceptable SSID length
+#define SSID_LEN 50
+
+// SSID of the access point
+char target_ssid[SSID_LEN];
+
+// If the result of the scan is a network starting with "picow"
+static int scan_callback(void* env, const cyw43_ev_scan_result_t* result)
+{
+    if (result) {
+        char header[10] = "";
+
+        // Get first 5 characters of the SSID
+        *header = '\0';
+        snprintf(header, 6, "%s", result->ssid);
+
+        // // Compose MAC address
+        // char bssid_str[40];
+        // sprintf(bssid_str, "%02x:%02x:%02x:%02x:%02x:%02x", result->bssid[0],
+        //         result->bssid[1], result->bssid[2], result->bssid[3],
+        //         result->bssid[4], result->bssid[5]);
+
+        // printf("ssid: %-32s rssi: %4d chan: %3d mac: %s sec: %u\n",
+        //        result->ssid, result->rssi, result->channel, bssid_str,
+        //        result->auth_mode);
+
+        if (strcmp(header, "picow") == 0) {
+            // Compose MAC address
+            char bssid_str[40];
+            sprintf(bssid_str, "%02x:%02x:%02x:%02x:%02x:%02x",
+                    result->bssid[0], result->bssid[1], result->bssid[2],
+                    result->bssid[3], result->bssid[4], result->bssid[5]);
+
+            printf("ssid: %-32s rssi: %4d chan: %3d mac: %s sec: %u\n",
+                   result->ssid, result->rssi, result->channel, bssid_str,
+                   result->auth_mode);
+
+            snprintf(target_ssid, SSID_LEN, "%s", result->ssid);
+        }
+    }
+
+    return 0;
+}
+
+// Initiate a wifi scan
+int find_target()
+{
+    // Scan options don't matter
+    cyw43_wifi_scan_options_t scan_options = {0};
+
+    printf("Starting Wifi scan...");
+
+    // This function scans for nearby Wifi networks and runs the
+    // callback function each time a network is found.
+    int err = cyw43_wifi_scan(&cyw43_state, &scan_options, NULL, scan_callback);
+
+    if (err == 0) {
+        printf("scan started successfully!\n");
+    } else {
+        printf("failed to start scan. err = %d\n", err);
+        return 1;
+    }
+
+    sleep_ms(10000);
+
+    return 0;
+}
+
+/*
  *  PACKET HANDLING
  */
 
@@ -208,10 +280,6 @@ void udp_recv_callback(void* arg, struct udp_pcb* upcb, struct pbuf* p,
 // Define the recv callback function
 int udp_recv_callback_init(void)
 {
-    // Allocate packet buffer
-    struct pbuf* p;
-    p = pbuf_alloc(PBUF_TRANSPORT, UDP_MSG_LEN_MAX + 1, PBUF_POOL);
-
     // Create a new UDP PCB
     udp_recv_pcb = udp_new_ip_type(IPADDR_TYPE_ANY);
 
@@ -556,71 +624,6 @@ void core_1_main()
  *  CORE 0 MAIN
  */
 
-#define ssidlen 100
-
-char target_ssid[ssidlen];
-
-static int store_result(void* env, const cyw43_ev_scan_result_t* result)
-{
-    if (result) {
-        char header[10] = "";
-
-        // Get first 5 characters of the SSID
-        *header = '\0';
-        snprintf(header, 6, "%s", result->ssid);
-
-        // // Compose MAC address
-        // char bssid_str[40];
-        // sprintf(bssid_str, "%02x:%02x:%02x:%02x:%02x:%02x", result->bssid[0],
-        //         result->bssid[1], result->bssid[2], result->bssid[3],
-        //         result->bssid[4], result->bssid[5]);
-
-        // printf("ssid: %-32s rssi: %4d chan: %3d mac: %s sec: %u\n",
-        //        result->ssid, result->rssi, result->channel, bssid_str,
-        //        result->auth_mode);
-
-        if (strcmp(header, "picow") == 0) {
-            // Compose MAC address
-            char bssid_str[40];
-            sprintf(bssid_str, "%02x:%02x:%02x:%02x:%02x:%02x",
-                    result->bssid[0], result->bssid[1], result->bssid[2],
-                    result->bssid[3], result->bssid[4], result->bssid[5]);
-
-            printf("ssid: %-32s rssi: %4d chan: %3d mac: %s sec: %u\n",
-                   result->ssid, result->rssi, result->channel, bssid_str,
-                   result->auth_mode);
-
-            snprintf(target_ssid, 100, "%s", result->ssid);
-        }
-    }
-
-    return 0;
-}
-
-int find_pico_network()
-{
-    // Scan options don't matter
-    cyw43_wifi_scan_options_t scan_options = {0};
-
-    printf("Starting Wifi scan...");
-
-    // This function scans for nearby Wifi networks and runs the
-    // callback function each time a network is found.
-    int err = cyw43_wifi_scan(&cyw43_state, &scan_options, NULL, store_result);
-
-    if (err == 0) {
-        printf("scan successful!\n");
-        printf("\ttarget SSID = %s\n", target_ssid);
-    } else {
-        printf("failed to start scan. err = %d\n", err);
-        return 1;
-    }
-
-    sleep_ms(10000);
-
-    return 0;
-}
-
 int main()
 {
     // Initialize all stdio types
@@ -659,6 +662,8 @@ int main()
             printf("allocated!\n");
         }
 
+        // I define this locally to guarantee that station nodes don't have
+        // access to it.
         const char wifi_ssid[30] = "picow_test_auto_connect";
 
         // Turn on access point
@@ -702,7 +707,8 @@ int main()
         printf("Station mode enabled!\n");
 
         // Perform a wifi scan
-        find_pico_network();
+        find_target();
+        printf("New target SSID = %s\n", target_ssid);
 
         // Connect to the access point
         printf("Connecting to Wi-Fi...");
@@ -711,8 +717,8 @@ int main()
             printf("failed to connect.\n");
             return 1;
         } else {
-            printf("connected to Wi-Fi:\n\tSSID = %s\n\tPASS = %s\n",
-                   target_ssid, WIFI_PASSWORD);
+            printf("connected!:\n\tSSID = %s\n\tPASS = %s\n", target_ssid,
+                   WIFI_PASSWORD);
 
             // Print address assigned by DCHP
             printf("Connected as: Pico-W IP addr: %s\n",
