@@ -1,2 +1,3 @@
 add_subdirectory(udp_send_recv)
 add_subdirectory(udp_send_recv_auto)
+add_subdirectory(udp_send_recv_multicore)
