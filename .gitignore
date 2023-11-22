@@ -4,3 +4,6 @@ build/
 
 # Notes
 notes
+
+# PDFs
+*.pdf
