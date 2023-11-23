@@ -21,7 +21,7 @@
  * mostly have a low RTT. Sometimes packets going from (ap -> station -> ap)
  * have a long RTT, likely because work is being done to keep the AP running.
  *
- * RTT is usually less than 100ms
+ * RTT is usually less than 100ms.
  *
  * Compiles into the following binaries:
  *  - udp_ap.uf2
