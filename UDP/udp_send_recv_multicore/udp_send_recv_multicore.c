@@ -84,8 +84,8 @@ char my_addr[20]   = "255.255.255.255";
 #define WIFI_PASSWORD "password"
 
 // UDP recv
-static struct udp_pcb* udp_recv_pcb;
 char recv_data[UDP_MSG_LEN_MAX];
+static struct udp_pcb* udp_recv_pcb;
 struct pt_sem new_udp_recv_s;
 
 // UDP send
@@ -186,7 +186,7 @@ const char* packet_types[NUM_PACKET_TYPES] = {"data", "ack"};
 typedef struct outgoing_packet {
     char packet_type[TOK_LEN];
     char ip_addr[TOK_LEN];
-    int ack_number;
+    int ack_num;
     uint64_t timestamp;
     char msg[UDP_MSG_LEN_MAX];
 } packet_t;
@@ -200,8 +200,8 @@ packet_t compose_packet(char* type, char* addr, int ack, uint64_t t, char* m)
 
     snprintf(op.packet_type, TOK_LEN, "%s", type);
     snprintf(op.ip_addr, TOK_LEN, "%s", addr);
-    op.ack_number = ack;
-    op.timestamp  = t;
+    op.ack_num   = ack;
+    op.timestamp = t;
     snprintf(op.msg, UDP_MSG_LEN_MAX, "%s", m);
 
     return op;
@@ -239,10 +239,13 @@ void copy_field(char* field, char* token)
 
 packet_t string_to_packet(char* s)
 {
+    // Not strictly necessary, but the strtok() function is destructive of
+    // its inputs therefore we copy the recv buffer into a temporary
+    // variable to avoid messing with it directly.
     char tbuf[UDP_MSG_LEN_MAX];
-    packet_t op;
-
     sprintf(tbuf, s);
+
+    packet_t op;
 
     char* token;
 
@@ -255,11 +258,11 @@ packet_t string_to_packet(char* s)
     copy_field(op.ip_addr, token);
 
     // ACK number
-    char ack_number_str[TOK_LEN];
+    char ack_num_str[TOK_LEN];
     token = strtok(NULL, ";");
-    copy_field(ack_number_str, token);
-    if (strcmp(ack_number_str, "n/a") != 0) {
-        op.ack_number = atoi(ack_number_str);
+    copy_field(ack_num_str, token);
+    if (strcmp(ack_num_str, "n/a") != 0) {
+        op.ack_num = atoi(ack_num_str);
     }
 
     // Timestamp
@@ -346,7 +349,7 @@ void udp_recv_callback(void* arg, struct udp_pcb* upcb, struct pbuf* p,
         pbuf_free(p);
 
         // Signal waiting threads
-        PT_SEM_SIGNAL(pt, &new_udp_recv_s);
+        PT_SEM_SAFE_SIGNAL(pt, &new_udp_recv_s);
     } else {
         printf("ERROR: NULL pt in callback\n");
     }
@@ -401,34 +404,35 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
     udp_send_pcb->remote_port = UDP_PORT;
     udp_send_pcb->local_port  = UDP_PORT;
 
+    // Outgoing packet
+    static packet_t send_buf;
+
     // Payload
     static char buffer[UDP_MSG_LEN_MAX];
     static int udp_send_length;
 
-    // Stores the address of the pbuf payload
+    // The address of the pbuf payload
     static char* req;
 
     // Error code
     static err_t er;
 
-    static packet_t send_buffer;
-
     while (true) {
         // Wait until the buffer is written
-        PT_SEM_WAIT(pt, &new_udp_send_s);
+        PT_SEM_SAFE_WAIT(pt, &new_udp_send_s);
 
         // Assign target pico IP address, string -> ip_addr_t
         ipaddr_aton(dest_addr_str, &dest_addr);
 
         // Pop the head of the queue
         mutex_enter_blocking(&send_mutex);
-        send_buffer = send_queue;
+        send_buf = send_queue;
         mutex_exit(&send_mutex);
 
         // Append header to the payload
-        sprintf(buffer, "%s;%s;%d;%llu;%s", send_buffer.packet_type,
-                send_buffer.ip_addr, send_buffer.ack_number,
-                send_buffer.timestamp, send_buffer.msg);
+        sprintf(buffer, "%s;%s;%d;%llu;%s", send_buf.packet_type,
+                send_buf.ip_addr, send_buf.ack_num, send_buf.timestamp,
+                send_buf.msg);
 
         // Allocate pbuf
         udp_send_length = strlen(buffer);
@@ -444,9 +448,9 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
         // Print formatted packet contents
         printf("| Outgoing...\n");
         printf("|\tpayload: { %s }\n", buffer);
-        printf("|\tdest:    %s\n", send_buffer.ip_addr);
-        printf("|\tnum:     %d\n", send_buffer.ack_number);
-        printf("|\tmsg:     %s\n", send_buffer.msg);
+        printf("|\tdest:    %s\n", send_buf.ip_addr);
+        printf("|\tnum:     %d\n", send_buf.ack_num);
+        printf("|\tmsg:     %s\n", send_buf.msg);
         printf("\n");
 #endif
 
@@ -477,36 +481,25 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
 {
     PT_BEGIN(pt);
 
-    // Not strictly necessary, but the strtok() function is destructive of
-    // its inputs therefore we copy the recv buffer into a temporary
-    // variable to avoid messing with it directly.
-    // static char tbuf[UDP_MSG_LEN_MAX];
-
-    // For tokenizing the packet
-    // static char packet_type[TOK_LEN];
-    // static char src_addr[TOK_LEN];
-    // static char packet_num[TOK_LEN];
-    // static char timestamp_str[TOK_LEN];
-    // static char msg[UDP_MSG_LEN_MAX];
-    static char* token;
-
     // Timestamp when the packet was sent
     static uint64_t timestamp;
 
+    // Round trip time
     static float rtt_ms;
 
+    // Incoming packet
     static packet_t recv_buf;
 
     while (true) {
         // Wait until the buffer is written
-        PT_SEM_WAIT(pt, &new_udp_recv_s);
+        PT_SEM_SAFE_WAIT(pt, &new_udp_recv_s);
 
         // Convert the contents of the received packet to a packet_t
         recv_buf = string_to_packet(recv_data);
 
 #ifndef PRINT_ON_RECV
         if (strcmp(recv_buf.packet_type, "ack") == 0) {
-            printf("%3d", recv_buf.ack_number);
+            printf("%3d", recv_buf.ack_num);
         }
 #else
         // Print formatted packet contents
@@ -514,7 +507,7 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         printf("|\tPayload: { %s }\n", recv_data);
         printf("|\ttype:    %s\n", recv_buf.packet_type);
         printf("|\tfrom:    %s\n", recv_buf.ip_addr);
-        printf("|\tack:     %d\n", recv_buf.ack_number);
+        printf("|\tack:     %d\n", recv_buf.ack_num);
         if (strcmp(recv_buf.packet_type, "data") == 0) {
             printf("|\tmsg:     %s\n", recv_buf.msg);
         } else if (strcmp(recv_buf.packet_type, "ack") == 0) {
@@ -528,22 +521,17 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
 
         // If data was received, respond with ACK
         if (strcmp(recv_buf.packet_type, "data") == 0) {
-            // // Assign return address and ACK number
+            // Assign return address and ACK number
             strcpy(return_addr_str, recv_buf.ip_addr);
-            // strcpy(return_timestamp, timestamp_str);
-            // return_ack_number = atoi(packet_num);
 
             // Write to the ack queue
             mutex_enter_blocking(&ack_mutex);
-            ack_queue = compose_packet("ack", my_addr, recv_buf.ack_number,
+            ack_queue = compose_packet("ack", my_addr, recv_buf.ack_num,
                                        recv_buf.timestamp, "");
             mutex_exit(&ack_mutex);
 
             // Signal ACK thread
-            PT_SEM_SIGNAL(pt, &new_udp_ack_s);
-
-            // Flag core 1 to turn on the LED
-            // led_flag = true;
+            PT_SEM_SAFE_SIGNAL(pt, &new_udp_ack_s);
         }
 
         PT_YIELD(pt);
@@ -566,34 +554,34 @@ static PT_THREAD(protothread_udp_ack(struct pt* pt))
     udp_ack_pcb->remote_port = UDP_PORT;
     udp_ack_pcb->local_port  = UDP_PORT;
 
+    // Outgoing packet
+    static packet_t ack_buf;
+
     // Payload
     static char buffer[UDP_MSG_LEN_MAX];
     static int udp_ack_length;
 
-    // Stores the address of the pbuf payload
+    // The address of the pbuf payload
     static char* req;
 
     // Error code
     static err_t er;
 
-    static packet_t ack_buffer;
-
     while (true) {
         // Wait until the buffer is written
-        PT_SEM_WAIT(pt, &new_udp_ack_s);
+        PT_SEM_SAFE_WAIT(pt, &new_udp_ack_s);
 
         // Assign target pico IP address
         ipaddr_aton(return_addr_str, &return_addr);
 
         // Pop the head of the queue
         mutex_enter_blocking(&ack_mutex);
-        ack_buffer = ack_queue;
+        ack_buf = ack_queue;
         mutex_exit(&ack_mutex);
 
         // Append header to the payload
-        sprintf(buffer, "%s;%s;%d;%llu", ack_buffer.packet_type,
-                ack_buffer.ip_addr, ack_buffer.ack_number,
-                ack_buffer.timestamp);
+        sprintf(buffer, "%s;%s;%d;%llu", ack_buf.packet_type, ack_buf.ip_addr,
+                ack_buf.ack_num, ack_buf.timestamp);
 
         // Allocate pbuf
         udp_ack_length = strlen(buffer);
@@ -610,7 +598,7 @@ static PT_THREAD(protothread_udp_ack(struct pt* pt))
         printf("| Outgoing...\n");
         printf("|\tPayload: { %s }\n", buffer);
         printf("|\tdest:    %s\n", return_addr_str);
-        printf("|\tnum:     %d\n", ack_buffer.ack_number);
+        printf("|\tnum:     %d\n", ack_buf.ack_num);
         printf("\n");
 #endif
 
@@ -655,7 +643,7 @@ static PT_THREAD(protothread_serial(struct pt* pt))
         mutex_exit(&send_mutex);
 
         // Signal waiting threads
-        PT_SEM_SIGNAL(pt, &new_udp_send_s);
+        PT_SEM_SAFE_SIGNAL(pt, &new_udp_send_s);
     }
 
     PT_END(pt);
@@ -670,18 +658,10 @@ void core_1_main()
 {
     printf("Core 1 launched!\n");
 
-    while (true) {
-        if (led_flag) {
-            led_on();
+    pt_add_thread(protothread_udp_send);
 
-            // Restart alarm
-            cancel_alarm(led_alarm);
-            led_alarm = add_alarm_in_ms(ALARM_MS, alarm_callback, NULL, false);
-
-            // Reset flag
-            led_flag = false;
-        }
-    }
+    printf("Starting Protothreads on Core 1!\n");
+    pt_schedule_start;
 }
 
 /*
@@ -704,7 +684,7 @@ int main()
 
     // Print out whether you're an AP or a station
     printf("\n\n==================== %s ====================\n\n",
-           (access_point ? "Access Point" : "Auto Station"));
+           (access_point ? "Multicore Access Point" : "Multicore Station"));
 
     // Initialize Wifi chip
     printf("Initializing cyw43...");
@@ -820,9 +800,9 @@ int main()
     // written. If a thread tries to aquire a semaphore that is unavailable,
     // it yields to the next thread in the scheduler.
     printf("Initializing send/recv semaphores...\n");
-    PT_SEM_INIT(&new_udp_send_s, 0);
-    PT_SEM_INIT(&new_udp_recv_s, 0);
-    PT_SEM_INIT(&new_udp_ack_s, 0);
+    PT_SEM_SAFE_INIT(&new_udp_send_s, 0);
+    PT_SEM_SAFE_INIT(&new_udp_recv_s, 0);
+    PT_SEM_SAFE_INIT(&new_udp_ack_s, 0);
 
     // Launch multicore
     multicore_reset_core1();
@@ -830,7 +810,6 @@ int main()
 
     // Start protothreads
     printf("Starting Protothreads on Core 0!\n");
-    pt_add_thread(protothread_udp_send);
     pt_add_thread(protothread_udp_recv);
     pt_add_thread(protothread_udp_ack);
     pt_add_thread(protothread_serial);
