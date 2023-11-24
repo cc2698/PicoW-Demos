@@ -10,6 +10,7 @@
 #include "pico/multicore.h"
 #include "pico/mutex.h"
 #include "pico/stdlib.h"
+#include "pico/unique_id.h"
 
 // Hardware
 #include "hardware/irq.h"
@@ -100,17 +101,16 @@ static int scan_callback(void* env, const cyw43_ev_scan_result_t* result)
         *header = '\0';
         snprintf(header, 6, "%s", result->ssid);
 
-        if (strcmp(header, "picow") == 0) {
-            // Compose MAC address
-            char bssid_str[40];
-            sprintf(bssid_str, "%02x:%02x:%02x:%02x:%02x:%02x",
-                    result->bssid[0], result->bssid[1], result->bssid[2],
-                    result->bssid[3], result->bssid[4], result->bssid[5]);
+        char bssid_str[40];
+        sprintf(bssid_str, "%02x:%02x:%02x:%02x:%02x:%02x", result->bssid[0],
+                result->bssid[1], result->bssid[2], result->bssid[3],
+                result->bssid[4], result->bssid[5]);
 
-            printf("ssid: %-32s rssi: %4d chan: %3d mac: %s sec: %u\n",
-                   result->ssid, result->rssi, result->channel, bssid_str,
-                   result->auth_mode);
+        printf("ssid: %-32s rssi: %4d chan: %3d mac: %s sec: %u\n",
+               result->ssid, result->rssi, result->channel, bssid_str,
+               result->auth_mode);
 
+        if (strcmp(header, "pidog") == 0) {
             snprintf(target_ssid, SSID_LEN, "%s", result->ssid);
         }
     }
@@ -118,17 +118,81 @@ static int scan_callback(void* env, const cyw43_ev_scan_result_t* result)
     return 0;
 }
 
+//
+//
+//
+//
+//
+
+#define MAX_NODES 5
+int is_nbr[MAX_NODES];
+int is_child_node[MAX_NODES];
+
+char pidog_target_ssid[SSID_LEN];
+
+char wifi_ssid[SSID_LEN];
+
+// If the result of the scan is a network starting with "picow"
+static int scan_callback_2(void* env, const cyw43_ev_scan_result_t* result)
+{
+    if (result) {
+        char header[10] = "";
+
+        // Get first 5 characters of the SSID
+        *header = '\0';
+        snprintf(header, 6, "%s", result->ssid);
+
+        if (strcmp(header, "pidog") == 0) {
+            printf("\tssid: %-32s rssi: %4d chan: %s sec: %u\n", result->ssid,
+                   result->rssi, result->channel, result->auth_mode);
+
+            snprintf(pidog_target_ssid, SSID_LEN, "%s", result->ssid);
+        }
+
+        if (strcmp(header, "picow") == 0) {
+            // Separate the ID number from the SSID: picow_<ID>
+            char tbuf[UDP_MSG_LEN_MAX];
+            sprintf(tbuf, result->ssid);
+
+            char* token;
+
+            // Get the ID
+            token = strtok(tbuf, "_");
+            token = strtok(NULL, "_");
+
+            // Convert the ID to an integer
+            int id = atoi(token);
+
+            // Mark as neighbor
+            is_nbr[id] = true;
+
+            printf("nbr\tssid: %-32s rssi: %4d, ID: %3d\n", result->ssid,
+                   result->rssi, id);
+        }
+    }
+
+    return 0;
+}
+
+//
+//
+//
+//
+//
+
 // Initiate a wifi scan
-int find_target()
+int find_target(int (*result_cb)(void*, const cyw43_ev_scan_result_t*))
 {
     // Scan options don't matter
     cyw43_wifi_scan_options_t scan_options = {0};
+
+    sprintf(pidog_target_ssid, "");
 
     printf("Starting Wifi scan...");
 
     // This function scans for nearby Wifi networks and runs the
     // callback function each time a network is found.
-    int err = cyw43_wifi_scan(&cyw43_state, &scan_options, NULL, scan_callback);
+    int err = cyw43_wifi_scan(&cyw43_state, &scan_options, NULL, result_cb);
 
     if (err == 0) {
         printf("scan started successfully!\n");
@@ -147,8 +211,8 @@ int find_target()
  */
 
 // Packet types
-#define NUM_PACKET_TYPES 2
-const char* packet_types[NUM_PACKET_TYPES] = {"data", "ack"};
+#define NUM_PACKET_TYPES 3
+const char* packet_types[NUM_PACKET_TYPES] = {"data", "ack", "token"};
 
 // Max length of header fields
 #define TOK_LEN 40
@@ -167,6 +231,7 @@ struct mutex send_mutex, ack_mutex;
 
 // Packet queues
 packet_t send_queue, ack_queue;
+bool ack_pending = false;
 
 packet_t compose_packet(char* type, char* addr, int ack, uint64_t t, char* m)
 {
@@ -365,6 +430,139 @@ int udp_recv_callback_init(void)
  *	THREADS
  */
 
+int connected_ID = 0;
+int target_ID    = 0;
+
+// Connect to a network
+int connect_to_network(char* ssid)
+{
+    if (access_point) {
+        printf("Can't connect to a network while in AP mode.");
+        return 1;
+    }
+
+    // Connect to the access point
+    printf("Connecting to Wi-Fi...");
+    if (cyw43_arch_wifi_connect_timeout_ms(ssid, WIFI_PASSWORD,
+                                           CYW43_AUTH_WPA2_AES_PSK, 30000)) {
+        printf("failed to connect.\n");
+        return 1;
+    } else {
+        printf("connected!:\n\tSSID = %s\n\tPASS = %s\n", ssid, WIFI_PASSWORD);
+
+        // Print address assigned by DCHP
+        printf("Connected as: Pico-W IP addr: %s\n",
+               ip4addr_ntoa(netif_ip4_addr(netif_list)));
+
+        // Configure target IP address
+        sprintf(my_addr, STATION_ADDR);
+        sprintf(dest_addr_str, "%s", AP_ADDR);
+
+        // Set local address, override the address assigned by DHCP
+        ip_addr_t ip;
+        ipaddr_aton(STATION_ADDR, &ip);
+
+        netif_set_ipaddr(netif_default, &ip);
+
+        // Print new local address
+        printf("Modified: new Pico-W IP addr: %s\n",
+               ip4addr_ntoa(netif_ip4_addr(netif_list)));
+
+        return 0;
+    }
+}
+
+int my_id = 0;
+struct pt_sem connect_sem;
+int id_token_number;
+
+int parent_ID;
+
+// =================================================
+// Connection managing thread
+// =================================================
+static PT_THREAD(protothread_connect(struct pt* pt))
+{
+    PT_BEGIN(pt);
+
+    static int err;
+
+    static char id_token[TOK_LEN];
+    static packet_t token_packet;
+
+    while (true) {
+        PT_YIELD_UNTIL(pt, (connected_ID != target_ID) && !ack_pending);
+
+        if (access_point) {
+            // Switch to station mode
+            cyw43_arch_disable_ap_mode();
+            cyw43_arch_enable_sta_mode();
+            access_point = false;
+
+            // Set dest addr to the access point
+            sprintf(dest_addr_str, "%s", STATION_ADDR);
+
+            if (target_ID == -1) {
+                find_target(scan_callback_2);
+
+                err = connect_to_network(pidog_target_ssid);
+
+                if (err == 0) {
+                    // If no pidogs (uninitialized nodes) were found
+                    if (strcmp(pidog_target_ssid, "") == 0) {
+                        target_ID = parent_ID;
+                    }
+
+                    // TODO: Mark as child node
+
+                    // Compose token to send
+                    token_packet =
+                        compose_packet("token", dest_addr_str, packet_counter,
+                                       0, id_token_number);
+
+                    // Enqueue packet (or is this done by recv thread?)
+                    send_queue = token_packet;
+
+                    // Signal send thread
+                    PT_SEM_SAFE_SIGNAL(pt, new_udp_send_s);
+                }
+            }
+
+            if (target_ID > 0) {
+                // Connect to someone else's network
+                snprintf(target_ssid, SSID_LEN, "picow_%d", target_ID);
+                if (connect_to_network(target_ssid)) {
+                    // If successful, change the connected_id number
+                    connected_ID = target_ID;
+                }
+            }
+            // Compose token to send
+            token_packet = compose_packet("token", dest_addr_str,
+                                          packet_counter, 0, id_token_number);
+
+            // Enqueue packet (or is this done by recv thread?)
+            send_queue = token_packet;
+
+            // Signal send thread
+            PT_SEM_SAFE_SIGNAL(pt, new_udp_send_s);
+
+        } else {
+            if (target_ID == 0) {
+                cyw43_arch_disable_sta_mode();
+
+                snprintf(wifi_ssid, SSID_LEN, "pidog_%s", my_id);
+                cyw43_arch_enable_ap_mode(wifi_ssid, WIFI_PASSWORD,
+                                          CYW43_AUTH_WPA2_AES_PSK);
+                access_point = true;
+            }
+        }
+
+        PT_YIELD(pt);
+    }
+
+    PT_END(pt);
+}
+
 // ==================================================
 // UDP send thread
 // ==================================================
@@ -465,12 +663,25 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
     // Incoming packet
     static packet_t recv_buf;
 
+    static char return_msg[10];
+
+    bool is_data, is_ack, is_token;
+
     while (true) {
         // Wait until the buffer is written
         PT_SEM_SAFE_WAIT(pt, &new_udp_recv_s);
 
         // Convert the contents of the received packet to a packet_t
         recv_buf = string_to_packet(recv_data);
+
+        is_data = is_ack = is_token = false;
+        if (strcmp(recv_buf.packet_type, "data")) {
+            is_data = true;
+        } else if (strcmp(recv_buf.packet_type, "ack")) {
+            is_ack = true;
+        } else if (strcmp(recv_buf.packet_type, "token")) {
+            is_token = true;
+        }
 
 #ifndef PRINT_ON_RECV
         if (strcmp(recv_buf.packet_type, "ack") == 0) {
@@ -483,30 +694,51 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         printf("|\ttype:    %s\n", recv_buf.packet_type);
         printf("|\tfrom:    %s\n", recv_buf.ip_addr);
         printf("|\tack:     %d\n", recv_buf.ack_num);
-        if (strcmp(recv_buf.packet_type, "data") == 0) {
-            printf("|\tmsg:     %s\n", recv_buf.msg);
-        } else if (strcmp(recv_buf.packet_type, "ack") == 0) {
+        printf("|\tmsg:     %s\n", recv_buf.msg);
+        if (strcmp(recv_buf.packet_type, "ack") == 0) {
             rtt_ms = (time_us_64() - recv_buf.timestamp) / 1000.0f;
             printf("|\tRTT:     %.2f ms\n", rtt_ms);
-        } else {
-            printf("|\tmsg:     %s\n", recv_buf.msg);
         }
         printf("\n");
 #endif
 
-        // If data was received, respond with ACK
-        if (strcmp(recv_buf.packet_type, "data") == 0) {
+        // If data or token was received, respond with ACK
+        if (is_data || is_token) {
             // Assign return address and ACK number
             strcpy(return_addr_str, recv_buf.ip_addr);
 
             // Write to the ack queue
             mutex_enter_blocking(&ack_mutex);
-            ack_queue = compose_packet("ack", my_addr, recv_buf.ack_num,
-                                       recv_buf.timestamp, "");
+            ack_queue =
+                compose_packet("ack", my_addr, recv_buf.ack_num,
+                               recv_buf.timestamp, (is_token ? "token" : ""));
             mutex_exit(&ack_mutex);
 
             // Signal ACK thread
             PT_SEM_SAFE_SIGNAL(pt, &new_udp_ack_s);
+            ack_pending = true;
+        }
+
+        // Determine if ack'ing token
+        if (is_ack) {
+            if (strcmp(recv_buf.msg, "token") == 0) {
+                // Signal connect thread to re-enable AP mode
+                target_ID = 0;
+            }
+        }
+
+        // Assign ID number
+        if (is_token) {
+            // Convert the token number into an integer
+            id_token_number = atoi(recv_buf.msg);
+
+            // If I don't have an ID yet, give myself one
+            if (my_id == 0) {
+                my_id = ++id_token_number;
+
+                // Signal connect thread to scan for neighbors
+                target_ID = -1;
+            }
         }
 
         PT_YIELD(pt);
@@ -603,9 +835,9 @@ static PT_THREAD(protothread_serial(struct pt* pt))
     PT_BEGIN(pt);
 
     while (true) {
-        // Yielding here is not strictly necessary but it gives a little bit of
-        // slack for the async processes so that the output is in the correct
-        // order (most of the time).
+        // Yielding here is not strictly necessary but it gives a little bit
+        // of slack for the async processes so that the output is in the
+        // correct order (most of the time).
         //      - Bruce Land
         PT_YIELD_usec(1e5);
 
@@ -676,14 +908,19 @@ int main()
             printf("allocated!\n");
         }
 
-        // I define this locally to guarantee that station nodes don't have
-        // access to it.
-        const char wifi_ssid[30] = "picow_test_auto_connect";
+        // snprintf(wifi_ssid, 50, "%s", "picow_neighbor_find");
+
+        char unique_board_id[20];
+
+        pico_get_unique_board_id_string(
+            unique_board_id, 2 * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 2);
+        snprintf(wifi_ssid, SSID_LEN, "pidog_%s", unique_board_id);
 
         // Turn on access point
         cyw43_arch_enable_ap_mode(wifi_ssid, WIFI_PASSWORD,
                                   CYW43_AUTH_WPA2_AES_PSK);
         printf("Access point mode enabled!\n");
+        printf("\tSSID = %s\n", wifi_ssid);
 
         // The variable 'state' is a pointer to a TCP_SERVER_T struct
         // Set up the access point IP address and mask
@@ -696,11 +933,12 @@ int main()
         sprintf(dest_addr_str, "%s", STATION_ADDR);
 
         // Start the Dynamic Host Configuration Protocol (DHCP) server. Even
-        // though in the program DHCP is not required, LwIP seems to need it!
+        // though in the program DHCP is not required, LwIP seems to need
+        // it!
         //      - Bruce Land
         //
-        // I believe that DHCP is what assigns the Pico-W client an initial IP
-        // address, which can be changed manually later.
+        // I believe that DHCP is what assigns the Pico-W client an initial
+        // IP address, which can be changed manually later.
         //      - Chris
         //
         // Set the Pico-W IP address from the 'state' structure
@@ -721,37 +959,42 @@ int main()
         printf("Station mode enabled!\n");
 
         // Perform a wifi scan
-        find_target();
+        printf("Current target SSID = %s\n", target_ssid);
+
+        find_target(scan_callback_2);
         printf("New target SSID = %s\n", target_ssid);
 
-        // Connect to the access point
-        printf("Connecting to Wi-Fi...");
-        if (cyw43_arch_wifi_connect_timeout_ms(
-                target_ssid, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 30000)) {
-            printf("failed to connect.\n");
-            return 1;
-        } else {
-            printf("connected!:\n\tSSID = %s\n\tPASS = %s\n", target_ssid,
-                   WIFI_PASSWORD);
+        // // Connect to the access point
+        // printf("Connecting to Wi-Fi...");
+        // if (cyw43_arch_wifi_connect_timeout_ms(
+        //         target_ssid, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 30000))
+        //         {
+        //     printf("failed to connect.\n");
+        //     return 1;
+        // } else {
+        //     printf("connected!:\n\tSSID = %s\n\tPASS = %s\n", target_ssid,
+        //            WIFI_PASSWORD);
 
-            // Print address assigned by DCHP
-            printf("Connected as: Pico-W IP addr: %s\n",
-                   ip4addr_ntoa(netif_ip4_addr(netif_list)));
+        //     // Print address assigned by DCHP
+        //     printf("Connected as: Pico-W IP addr: %s\n",
+        //            ip4addr_ntoa(netif_ip4_addr(netif_list)));
 
-            // Configure target IP address
-            sprintf(my_addr, STATION_ADDR);
-            sprintf(dest_addr_str, "%s", AP_ADDR);
+        //     // Configure target IP address
+        //     sprintf(my_addr, STATION_ADDR);
+        //     sprintf(dest_addr_str, "%s", AP_ADDR);
 
-            // Set local address, override the address assigned by DHCP
-            ip_addr_t ip;
-            ipaddr_aton(STATION_ADDR, &ip);
+        //     // Set local address, override the address assigned by DHCP
+        //     ip_addr_t ip;
+        //     ipaddr_aton(STATION_ADDR, &ip);
 
-            netif_set_ipaddr(netif_default, &ip);
+        //     netif_set_ipaddr(netif_default, &ip);
 
-            // Print new local address
-            printf("Modified: new Pico-W IP addr: %s\n",
-                   ip4addr_ntoa(netif_ip4_addr(netif_list)));
-        }
+        //     // Print new local address
+        //     printf("Modified: new Pico-W IP addr: %s\n",
+        //            ip4addr_ntoa(netif_ip4_addr(netif_list)));
+        // }
+
+        connect_to_network(target_ssid);
     }
 
     // Initialize UDP recv callback function
