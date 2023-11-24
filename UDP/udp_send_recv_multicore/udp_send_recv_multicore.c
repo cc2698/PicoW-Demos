@@ -28,8 +28,8 @@
  *  DEBUGGING
  */
 
-// #define PRINT_ON_RECV
-// #define PRINT_ON_SEND
+#define PRINT_ON_RECV
+#define PRINT_ON_SEND
 #define TEST_PACKET
 
 /*
