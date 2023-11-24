@@ -557,6 +557,8 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             cyw43_arch_enable_sta_mode();
             access_point = false;
 
+            udp_remove(udp_recv_pcb);
+
             // Initialize UDP recv callback function
             printf("Initializing recv callback...");
             if (udp_recv_callback_init()) {
