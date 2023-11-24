@@ -633,9 +633,8 @@ void core_1_main()
 {
     printf("Core 1 launched!\n");
 
-    pt_add_thread(protothread_udp_send);
-
     printf("Starting Protothreads on Core 1!\n");
+    pt_add_thread(protothread_udp_send);
     pt_schedule_start;
 }
 
