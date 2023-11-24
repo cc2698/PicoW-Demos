@@ -53,7 +53,8 @@ char my_addr[20]   = "255.255.255.255";
 
 // Wifi name and password
 // #define WIFI_SSID     "picow_test"
-#define WIFI_PASSWORD "password"
+// #define WIFI_PASSWORD "password"
+#define WIFI_PASSWORD NULL
 
 // UDP recv
 char recv_data[UDP_MSG_LEN_MAX];
@@ -80,6 +81,12 @@ typedef struct TCP_SERVER_T_ {
     ip_addr_t gw;
     async_context_t* context;
 } TCP_SERVER_T;
+
+TCP_SERVER_T* state;
+ip4_addr_t mask;
+dhcp_server_t dhcp_server;
+
+int boot_access_point();
 
 /*
  *  WIFI SCANNING
@@ -139,20 +146,22 @@ static int scan_callback_2(void* env, const cyw43_ev_scan_result_t* result)
         char header[10] = "";
 
         // Get first 5 characters of the SSID
-        *header = '\0';
+        // *header = '\0';
         snprintf(header, 6, "%s", result->ssid);
 
-        if (strcmp(header, "pidog") == 0) {
-            printf("\tssid: %-32s rssi: %4d chan: %s sec: %u\n", result->ssid,
-                   result->rssi, result->channel, result->auth_mode);
+        printf("header: %s ssid: %-32s rssi: %4d\n", header, result->ssid,
+               result->rssi);
 
-            snprintf(pidog_target_ssid, SSID_LEN, "%s", result->ssid);
+        if (strcmp(header, "pidog") == 0) {
+            printf("Setting pidog target ssid, old target = %s\n", target_ssid);
+            snprintf(target_ssid, SSID_LEN, "%s", result->ssid);
+            printf("Setting pidog target ssid, new target = %s\n", target_ssid);
         }
 
         if (strcmp(header, "picow") == 0) {
             // Separate the ID number from the SSID: picow_<ID>
             char tbuf[UDP_MSG_LEN_MAX];
-            sprintf(tbuf, result->ssid);
+            sprintf(tbuf, "%s", result->ssid);
 
             char* token;
 
@@ -220,6 +229,8 @@ const char* packet_types[NUM_PACKET_TYPES] = {"data", "ack", "token"};
 // Structure that stores an outgoing packet
 typedef struct outgoing_packet {
     char packet_type[TOK_LEN];
+    int dest_id;
+    int src_id;
     char ip_addr[TOK_LEN];
     int ack_num;
     uint64_t timestamp;
@@ -233,12 +244,15 @@ struct mutex send_mutex, ack_mutex;
 packet_t send_queue, ack_queue;
 bool ack_pending = false;
 
-packet_t compose_packet(char* type, char* addr, int ack, uint64_t t, char* m)
+packet_t compose_packet(char* type, int dest, int src, char* addr, int ack,
+                        uint64_t t, char* m)
 {
     packet_t op;
 
     snprintf(op.packet_type, TOK_LEN, "%s", type);
     snprintf(op.ip_addr, TOK_LEN, "%s", addr);
+    op.dest_id   = dest;
+    op.src_id    = src;
     op.ack_num   = ack;
     op.timestamp = t;
     snprintf(op.msg, UDP_MSG_LEN_MAX, "%s", m);
@@ -283,7 +297,7 @@ packet_t string_to_packet(char* s)
     // its inputs therefore we copy the recv buffer into a temporary
     // variable to avoid messing with it directly.
     char tbuf[UDP_MSG_LEN_MAX];
-    sprintf(tbuf, s);
+    sprintf(tbuf, "%s", s);
 
     packet_t op;
 
@@ -292,6 +306,22 @@ packet_t string_to_packet(char* s)
     // Data or ACK
     token = strtok(tbuf, ";");
     copy_field(op.packet_type, token);
+
+    // Dest ID
+    char dest_id_str[TOK_LEN];
+    token = strtok(NULL, ";");
+    copy_field(dest_id_str, token);
+    if (strcmp(dest_id_str, "n/a") != 0) {
+        op.dest_id = atoi(dest_id_str);
+    }
+
+    // Src ID
+    char src_id_str[TOK_LEN];
+    token = strtok(NULL, ";");
+    copy_field(src_id_str, token);
+    if (strcmp(src_id_str, "n/a") != 0) {
+        op.src_id = atoi(src_id_str);
+    }
 
     // Source IP address
     token = strtok(NULL, ";");
@@ -318,6 +348,19 @@ packet_t string_to_packet(char* s)
     copy_field(op.msg, token);
 
     return op;
+}
+
+void print_packet(char* payload, packet_t p)
+{
+    if (payload != NULL) {
+        printf("|\tPayload: { %s }\n", payload);
+    }
+    printf("|\ttype:    %s\n", p.packet_type);
+    printf("|\tdest_id: %d\n", p.dest_id);
+    printf("|\tsrc_id:  %d\n", p.src_id);
+    printf("|\tfrom:    %s\n", p.ip_addr);
+    printf("|\tack:     %d\n", p.ack_num);
+    printf("|\tmsg:     %s\n", p.msg);
 }
 
 /*
@@ -442,7 +485,7 @@ int connect_to_network(char* ssid)
     }
 
     // Connect to the access point
-    printf("Connecting to Wi-Fi...");
+    printf("Connecting to %s...", ssid);
     if (cyw43_arch_wifi_connect_timeout_ms(ssid, WIFI_PASSWORD,
                                            CYW43_AUTH_WPA2_AES_PSK, 30000)) {
         printf("failed to connect.\n");
@@ -478,6 +521,10 @@ int id_token_number;
 
 int parent_ID;
 
+int send_queue_id;
+
+bool signal_connect_thread = false;
+
 // =================================================
 // Connection managing thread
 // =================================================
@@ -489,13 +536,24 @@ static PT_THREAD(protothread_connect(struct pt* pt))
 
     static char id_token[TOK_LEN];
     static packet_t token_packet;
+    static char msg_buf[TOK_LEN];
 
     while (true) {
-        PT_YIELD_UNTIL(pt, (connected_ID != target_ID) && !ack_pending);
+        PT_YIELD_UNTIL(pt, signal_connect_thread && !ack_pending);
+
+        signal_connect_thread = false;
+
+        printf("connected_id = %d; target_id = %d; ack_pending = %d\n",
+               connected_ID, target_ID, ack_pending);
 
         if (access_point) {
             // Switch to station mode
+            printf("Switch to station mode!\n");
             cyw43_arch_disable_ap_mode();
+
+            free(state);                      // Free the TCP_SERVER state
+            dhcp_server_deinit(&dhcp_server); // disable the dhcp server
+
             cyw43_arch_enable_sta_mode();
             access_point = false;
 
@@ -503,57 +561,94 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             sprintf(dest_addr_str, "%s", STATION_ADDR);
 
             if (target_ID == -1) {
+                printf("Giving time for the AP to boot\n");
+                sleep_ms(3000);
+
                 find_target(scan_callback_2);
 
-                err = connect_to_network(pidog_target_ssid);
+                if (strcmp(target_ssid, "") == 0) {
+                    printf("No pidogs found\n");
+                    // If no pidogs (uninitialized nodes) were found, hand
+                    // the token back to the parent node
+                    printf("target ID before: %d\n", target_ID);
+                    target_ID = parent_ID;
+                    printf("target ID after: %d\n", target_ID);
 
-                if (err == 0) {
-                    // If no pidogs (uninitialized nodes) were found
-                    if (strcmp(pidog_target_ssid, "") == 0) {
-                        target_ID = parent_ID;
-                    }
+                } else if (connect_to_network(target_ssid) == 0) {
 
                     // TODO: Mark as child node
 
                     // Compose token to send
+                    sprintf(msg_buf, "%d", id_token_number);
                     token_packet =
-                        compose_packet("token", dest_addr_str, packet_counter,
-                                       0, id_token_number);
+                        compose_packet("token", -1, my_id, dest_addr_str,
+                                       packet_counter, 0, msg_buf);
 
                     // Enqueue packet (or is this done by recv thread?)
                     send_queue = token_packet;
 
                     // Signal send thread
-                    PT_SEM_SAFE_SIGNAL(pt, new_udp_send_s);
+                    PT_SEM_SAFE_SIGNAL(pt, &new_udp_send_s);
                 }
             }
 
             if (target_ID > 0) {
                 // Connect to someone else's network
                 snprintf(target_ssid, SSID_LEN, "picow_%d", target_ID);
-                if (connect_to_network(target_ssid)) {
+
+                printf("Giving time for the AP to boot\n");
+                sleep_ms(3000);
+                printf("Giving time for the AP to boot\n");
+                sleep_ms(3000);
+                printf("Giving time for the AP to boot\n");
+                sleep_ms(3000);
+
+                printf("Trying to connect to network: %s\n", target_ssid);
+                if (connect_to_network(target_ssid) == 0) {
                     // If successful, change the connected_id number
                     connected_ID = target_ID;
+
+                    // Compose token to send
+                    sprintf(msg_buf, "%d", id_token_number);
+                    token_packet =
+                        compose_packet("token", target_ID, my_id, dest_addr_str,
+                                       packet_counter, 0, msg_buf);
+
+                    // Enqueue packet (or is this done by recv thread?)
+                    send_queue = token_packet;
+
+                    // Signal send thread
+                    PT_SEM_SAFE_SIGNAL(pt, &new_udp_send_s);
                 }
             }
-            // Compose token to send
-            token_packet = compose_packet("token", dest_addr_str,
-                                          packet_counter, 0, id_token_number);
-
-            // Enqueue packet (or is this done by recv thread?)
-            send_queue = token_packet;
-
-            // Signal send thread
-            PT_SEM_SAFE_SIGNAL(pt, new_udp_send_s);
 
         } else {
             if (target_ID == 0) {
+
+                printf("Switch to AP mode!\n");
                 cyw43_arch_disable_sta_mode();
 
-                snprintf(wifi_ssid, SSID_LEN, "pidog_%s", my_id);
-                cyw43_arch_enable_ap_mode(wifi_ssid, WIFI_PASSWORD,
-                                          CYW43_AUTH_WPA2_AES_PSK);
+                snprintf(wifi_ssid, SSID_LEN, "picow_%d", my_id);
+                printf("%s\n", wifi_ssid);
+                // cyw43_arch_enable_ap_mode(wifi_ssid, WIFI_PASSWORD,
+                //                           CYW43_AUTH_WPA2_AES_PSK);
+
+                // De-initialize Wifi chip
+                cyw43_arch_deinit();
+
+                // Initialize Wifi chip
+                printf("Initializing cyw43...");
+                if (cyw43_arch_init()) {
+                    printf("failed to initialise.\n");
+                    return 1;
+                } else {
+                    printf("initialized!\n");
+                }
+
+                boot_access_point();
+
                 access_point = true;
+                connected_ID = 0;
             }
         }
 
@@ -603,9 +698,9 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
         mutex_exit(&send_mutex);
 
         // Append header to the payload
-        sprintf(buffer, "%s;%s;%d;%llu;%s", send_buf.packet_type,
-                send_buf.ip_addr, send_buf.ack_num, send_buf.timestamp,
-                send_buf.msg);
+        sprintf(buffer, "%s;%d;%d;%s;%d;%llu;%s", send_buf.packet_type,
+                send_buf.dest_id, send_buf.src_id, send_buf.ip_addr,
+                send_buf.ack_num, send_buf.timestamp, send_buf.msg);
 
         // Allocate pbuf
         udp_send_length = strlen(buffer);
@@ -620,10 +715,7 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
 #ifdef PRINT_ON_SEND
         // Print formatted packet contents
         printf("| Outgoing...\n");
-        printf("|\tpayload: { %s }\n", buffer);
-        printf("|\tdest:    %s\n", send_buf.ip_addr);
-        printf("|\tnum:     %d\n", send_buf.ack_num);
-        printf("|\tmsg:     %s\n", send_buf.msg);
+        print_packet(buffer, send_buf);
         printf("\n");
 #endif
 
@@ -665,7 +757,7 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
 
     static char return_msg[10];
 
-    bool is_data, is_ack, is_token;
+    static bool is_data, is_ack, is_token;
 
     while (true) {
         // Wait until the buffer is written
@@ -675,13 +767,16 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         recv_buf = string_to_packet(recv_data);
 
         is_data = is_ack = is_token = false;
-        if (strcmp(recv_buf.packet_type, "data")) {
+        if (strcmp(recv_buf.packet_type, "data") == 0) {
             is_data = true;
-        } else if (strcmp(recv_buf.packet_type, "ack")) {
+        } else if (strcmp(recv_buf.packet_type, "ack") == 0) {
             is_ack = true;
-        } else if (strcmp(recv_buf.packet_type, "token")) {
+        } else if (strcmp(recv_buf.packet_type, "token") == 0) {
+            printf("is a token\n");
             is_token = true;
         }
+
+        printf("%d, %d, %d\n", is_data, is_ack, is_token);
 
 #ifndef PRINT_ON_RECV
         if (strcmp(recv_buf.packet_type, "ack") == 0) {
@@ -690,11 +785,7 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
 #else
         // Print formatted packet contents
         printf("| Incoming...\n");
-        printf("|\tPayload: { %s }\n", recv_data);
-        printf("|\ttype:    %s\n", recv_buf.packet_type);
-        printf("|\tfrom:    %s\n", recv_buf.ip_addr);
-        printf("|\tack:     %d\n", recv_buf.ack_num);
-        printf("|\tmsg:     %s\n", recv_buf.msg);
+        print_packet(recv_data, recv_buf);
         if (strcmp(recv_buf.packet_type, "ack") == 0) {
             rtt_ms = (time_us_64() - recv_buf.timestamp) / 1000.0f;
             printf("|\tRTT:     %.2f ms\n", rtt_ms);
@@ -709,9 +800,10 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
 
             // Write to the ack queue
             mutex_enter_blocking(&ack_mutex);
-            ack_queue =
-                compose_packet("ack", my_addr, recv_buf.ack_num,
-                               recv_buf.timestamp, (is_token ? "token" : ""));
+            printf("is token: %d\n", is_token);
+            ack_queue = compose_packet("ack", recv_buf.src_id, my_id, my_addr,
+                                       recv_buf.ack_num, recv_buf.timestamp,
+                                       recv_buf.packet_type);
             mutex_exit(&ack_mutex);
 
             // Signal ACK thread
@@ -722,22 +814,39 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         // Determine if ack'ing token
         if (is_ack) {
             if (strcmp(recv_buf.msg, "token") == 0) {
+                printf("token ack'ed\n");
                 // Signal connect thread to re-enable AP mode
-                target_ID = 0;
+                target_ID             = 0;
+                signal_connect_thread = true;
+
+                printf("connected_id = %d; target_id = %d; ack_pending = %d\n",
+                       connected_ID, target_ID, ack_pending);
             }
         }
 
         // Assign ID number
         if (is_token) {
+            printf("is a token\n");
+
             // Convert the token number into an integer
             id_token_number = atoi(recv_buf.msg);
 
             // If I don't have an ID yet, give myself one
             if (my_id == 0) {
-                my_id = ++id_token_number;
+                printf("Parent ID before = %d\n", parent_ID);
+                printf("My ID before = %d\n", my_id);
+                parent_ID =
+                    recv_buf.src_id; // Parent is whoever gave you the token
+                my_id = ++id_token_number; // Increment the token number
+                printf("Parent ID after = %d\n", parent_ID);
+                printf("My ID after = %d\n", my_id);
 
                 // Signal connect thread to scan for neighbors
-                target_ID = -1;
+                target_ID             = -1;
+                signal_connect_thread = true;
+
+                printf("connected_id = %d; target_id = %d; ack_pending = %d\n",
+                       connected_ID, target_ID, ack_pending);
             }
         }
 
@@ -787,8 +896,9 @@ static PT_THREAD(protothread_udp_ack(struct pt* pt))
         mutex_exit(&ack_mutex);
 
         // Append header to the payload
-        sprintf(buffer, "%s;%s;%d;%llu", ack_buf.packet_type, ack_buf.ip_addr,
-                ack_buf.ack_num, ack_buf.timestamp);
+        sprintf(buffer, "%s;%d;%d;%s;%d;%llu;%s", ack_buf.packet_type,
+                ack_buf.dest_id, ack_buf.src_id, ack_buf.ip_addr,
+                ack_buf.ack_num, ack_buf.timestamp, ack_buf.msg);
 
         // Allocate pbuf
         udp_ack_length = strlen(buffer);
@@ -803,9 +913,7 @@ static PT_THREAD(protothread_udp_ack(struct pt* pt))
 #ifdef PRINT_ON_SEND
         // Print formatted packet contents
         printf("| Outgoing...\n");
-        printf("|\tPayload: { %s }\n", buffer);
-        printf("|\tdest:    %s\n", return_addr_str);
-        printf("|\tnum:     %d\n", ack_buf.ack_num);
+        print_packet(buffer, ack_buf);
         printf("\n");
 #endif
 
@@ -813,6 +921,8 @@ static PT_THREAD(protothread_udp_ack(struct pt* pt))
         // cyw43_arch_lwip_begin();
         er = udp_sendto(udp_ack_pcb, p, &return_addr, UDP_PORT);
         // cyw43_arch_lwip_end();
+
+        ack_pending = false;
 
         if (er != ERR_OK) {
             printf("Failed to send UDP ack! error=%d\n", er);
@@ -844,10 +954,16 @@ static PT_THREAD(protothread_serial(struct pt* pt))
         // Spawn thread for non-blocking read
         serial_read;
 
-        mutex_enter_blocking(&send_mutex);
-        send_queue = compose_packet("data", my_addr, packet_counter,
-                                    time_us_64(), pt_serial_in_buffer);
-        mutex_exit(&send_mutex);
+        if (strcmp(pt_serial_in_buffer, "token") == 0) {
+            send_queue = compose_packet("token", target_ID, my_id, my_addr,
+                                        packet_counter, time_us_64(), "1");
+        } else {
+            mutex_enter_blocking(&send_mutex);
+            send_queue = compose_packet("data", target_ID, my_id, my_addr,
+                                        packet_counter, time_us_64(),
+                                        pt_serial_in_buffer);
+            mutex_exit(&send_mutex);
+        }
 
         // Signal waiting threads
         PT_SEM_SAFE_SIGNAL(pt, &new_udp_send_s);
@@ -870,6 +986,52 @@ void core_1_main()
  *  CORE 0 MAIN
  */
 
+// TCP_SERVER_T* state;
+
+int boot_access_point()
+{
+    // Allocate TCP server state
+    state = calloc(1, sizeof(TCP_SERVER_T));
+    printf("Allocating TCP server state...");
+    if (!state) {
+        printf("failed to allocate state.\n");
+        return 1;
+    } else {
+        printf("allocated!\n");
+    }
+
+    // Turn on access point
+    cyw43_arch_enable_ap_mode(wifi_ssid, WIFI_PASSWORD,
+                              CYW43_AUTH_WPA2_AES_PSK);
+    printf("Access point mode enabled!\n");
+    printf("\tSSID = %s\n", wifi_ssid);
+
+    // The variable 'state' is a pointer to a TCP_SERVER_T struct
+    // Set up the access point IP address and mask
+    ipaddr_aton(AP_ADDR, ip_2_ip4(&state->gw));
+    ipaddr_aton(MASK_ADDR, ip_2_ip4(&mask));
+
+    // Configure target IP address
+    sprintf(my_addr, AP_ADDR);
+    sprintf(dest_addr_str, "%s", STATION_ADDR);
+
+    // Start the Dynamic Host Configuration Protocol (DHCP) server. Even
+    // though in the program DHCP is not required, LwIP seems to need
+    // it!
+    //      - Bruce Land
+    //
+    // I believe that DHCP is what assigns the Pico-W client an initial
+    // IP address, which can be changed manually later.
+    //      - Chris
+    //
+    // Set the Pico-W IP address from the 'state' structure
+    // Set 'mask' as defined above
+    dhcp_server_init(&dhcp_server, &state->gw, &mask);
+
+    // Print IP address
+    printf("My IPv4 addr = %s\n", ip4addr_ntoa(&state->gw));
+}
+
 int main()
 {
     // Initialize all stdio types
@@ -882,11 +1044,12 @@ int main()
     access_point = true;
 #else
     access_point = false;
+    my_id        = 1;
 #endif
 
     // Print out whether you're an AP or a station
     printf("\n\n==================== %s ====================\n\n",
-           (access_point ? "NF Access Point" : "NF Station"));
+           (access_point ? "NF Node" : "NF Master"));
 
     // Initialize Wifi chip
     printf("Initializing cyw43...");
@@ -899,7 +1062,7 @@ int main()
 
     if (access_point) {
         // Allocate TCP server state
-        TCP_SERVER_T* state = calloc(1, sizeof(TCP_SERVER_T));
+        state = calloc(1, sizeof(TCP_SERVER_T));
         printf("Allocating TCP server state...");
         if (!state) {
             printf("failed to allocate state.\n");
@@ -924,7 +1087,7 @@ int main()
 
         // The variable 'state' is a pointer to a TCP_SERVER_T struct
         // Set up the access point IP address and mask
-        ip4_addr_t mask;
+        // ip4_addr_t mask;
         ipaddr_aton(AP_ADDR, ip_2_ip4(&state->gw));
         ipaddr_aton(MASK_ADDR, ip_2_ip4(&mask));
 
@@ -943,7 +1106,7 @@ int main()
         //
         // Set the Pico-W IP address from the 'state' structure
         // Set 'mask' as defined above
-        dhcp_server_t dhcp_server;
+        // dhcp_server_t dhcp_server;
         dhcp_server_init(&dhcp_server, &state->gw, &mask);
 
         // Print IP address
@@ -964,36 +1127,7 @@ int main()
         find_target(scan_callback_2);
         printf("New target SSID = %s\n", target_ssid);
 
-        // // Connect to the access point
-        // printf("Connecting to Wi-Fi...");
-        // if (cyw43_arch_wifi_connect_timeout_ms(
-        //         target_ssid, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 30000))
-        //         {
-        //     printf("failed to connect.\n");
-        //     return 1;
-        // } else {
-        //     printf("connected!:\n\tSSID = %s\n\tPASS = %s\n", target_ssid,
-        //            WIFI_PASSWORD);
-
-        //     // Print address assigned by DCHP
-        //     printf("Connected as: Pico-W IP addr: %s\n",
-        //            ip4addr_ntoa(netif_ip4_addr(netif_list)));
-
-        //     // Configure target IP address
-        //     sprintf(my_addr, STATION_ADDR);
-        //     sprintf(dest_addr_str, "%s", AP_ADDR);
-
-        //     // Set local address, override the address assigned by DHCP
-        //     ip_addr_t ip;
-        //     ipaddr_aton(STATION_ADDR, &ip);
-
-        //     netif_set_ipaddr(netif_default, &ip);
-
-        //     // Print new local address
-        //     printf("Modified: new Pico-W IP addr: %s\n",
-        //            ip4addr_ntoa(netif_ip4_addr(netif_list)));
-        // }
-
+        // Connect to the access point
         connect_to_network(target_ssid);
     }
 
@@ -1027,6 +1161,7 @@ int main()
     pt_add_thread(protothread_udp_recv);
     pt_add_thread(protothread_udp_ack);
     pt_add_thread(protothread_serial);
+    pt_add_thread(protothread_connect);
     pt_schedule_start;
 
     // De-initialize the cyw43 architecture.
