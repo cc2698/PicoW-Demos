@@ -24,25 +24,46 @@ pico_sdk_init()
 
 #######
 
-add_executable(neighbor_find)
-pico_enable_stdio_usb(neighbor_find 0)
-pico_enable_stdio_uart(neighbor_find 1)
-target_sources(neighbor_find PRIVATE
-		udp_send_recv_multicore.c
+# Access point
+add_executable(nbr_find_ap)
+pico_enable_stdio_usb(nbr_find_ap 0)
+pico_enable_stdio_uart(nbr_find_ap 1)
+target_sources(nbr_find_ap PRIVATE
+		neighbor_find.c
 		dhcpserver/dhcpserver.c
 )
-target_compile_definitions(neighbor_find PRIVATE AP)
-target_include_directories(neighbor_find PRIVATE
+target_compile_definitions(nbr_find_ap PRIVATE AP)
+target_include_directories(nbr_find_ap PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
 		${CMAKE_CURRENT_LIST_DIR}/dhcpserver
 )
-target_link_libraries(neighbor_find PRIVATE
+target_link_libraries(nbr_find_ap PRIVATE
 		pico_cyw43_arch
 		pico_cyw43_arch_lwip_threadsafe_background 
 		pico_stdlib
 		pico_multicore
 )
-pico_add_extra_outputs(neighbor_find) # Generate UF2 output
+pico_add_extra_outputs(nbr_find_ap) # Generate UF2 output
+
+# Station
+add_executable(nbr_find_station)
+pico_enable_stdio_usb(nbr_find_station 0)
+pico_enable_stdio_uart(nbr_find_station 1)
+target_sources(nbr_find_station PRIVATE
+		neighbor_find.c
+		dhcpserver/dhcpserver.c
+)
+target_include_directories(nbr_find_station PRIVATE
+        ${CMAKE_CURRENT_LIST_DIR}
+		${CMAKE_CURRENT_LIST_DIR}/dhcpserver
+)
+target_link_libraries(nbr_find_station PRIVATE
+		pico_cyw43_arch
+		pico_cyw43_arch_lwip_threadsafe_background
+		pico_stdlib
+		pico_multicore
+)
+pico_add_extra_outputs(nbr_find_station) # Generate UF2 output
 
 # Compiler optimization
 add_compile_options(-O2)

@@ -17,6 +17,7 @@ add_subdirectory(Blink)
 add_subdirectory(Access_Point)
 add_subdirectory(UDP)
 add_subdirectory(picow_wifi_scan)
+add_subdirectory(neighbor_find)
 
 add_compile_options(-Wall
         -Wno-format          # int != int32_t as far as the compiler is concerned because gcc has int32_t as long int

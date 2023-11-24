@@ -28,8 +28,8 @@
  *  DEBUGGING
  */
 
-// #define PRINT_ON_RECV
-// #define PRINT_ON_SEND
+#define PRINT_ON_RECV
+#define PRINT_ON_SEND
 #define TEST_PACKET
 
 /*
@@ -162,7 +162,10 @@ typedef struct outgoing_packet {
     char msg[UDP_MSG_LEN_MAX];
 } packet_t;
 
+// Mutexes
 struct mutex send_mutex, ack_mutex;
+
+// Packet queues
 packet_t send_queue, ack_queue;
 
 packet_t compose_packet(char* type, char* addr, int ack, uint64_t t, char* m)
@@ -208,6 +211,7 @@ void copy_field(char* field, char* token)
     }
 }
 
+// Convert a string to a packet
 packet_t string_to_packet(char* s)
 {
     // Not strictly necessary, but the strtok() function is destructive of
@@ -628,11 +632,6 @@ static PT_THREAD(protothread_serial(struct pt* pt))
 void core_1_main()
 {
     printf("Core 1 launched!\n");
-
-    pt_add_thread(protothread_udp_send);
-
-    printf("Starting Protothreads on Core 1!\n");
-    pt_schedule_start;
 }
 
 /*
@@ -655,7 +654,7 @@ int main()
 
     // Print out whether you're an AP or a station
     printf("\n\n==================== %s ====================\n\n",
-           (access_point ? "Multicore Access Point" : "Multicore Station"));
+           (access_point ? "NF Access Point" : "NF Station"));
 
     // Initialize Wifi chip
     printf("Initializing cyw43...");
@@ -781,6 +780,7 @@ int main()
 
     // Start protothreads
     printf("Starting Protothreads on Core 0!\n");
+    pt_add_thread(protothread_udp_send);
     pt_add_thread(protothread_udp_recv);
     pt_add_thread(protothread_udp_ack);
     pt_add_thread(protothread_serial);
