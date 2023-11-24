@@ -557,8 +557,16 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             cyw43_arch_enable_sta_mode();
             access_point = false;
 
+            // Initialize UDP recv callback function
+            printf("Initializing recv callback...");
+            if (udp_recv_callback_init()) {
+                printf("receive callback failed to initialize.");
+            } else {
+                printf("callback initialized!\n");
+            }
+
             // Set dest addr to the access point
-            sprintf(dest_addr_str, "%s", STATION_ADDR);
+            sprintf(dest_addr_str, "%s", AP_ADDR);
 
             if (target_ID == -1) {
                 printf("Giving time for the AP to boot\n");
@@ -608,10 +616,13 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                     // If successful, change the connected_id number
                     connected_ID = target_ID;
 
+                    printf("connected id: %d\n", connected_ID);
+                    printf("dest_addr: %s\n", dest_addr_str);
+
                     // Compose token to send
                     sprintf(msg_buf, "%d", id_token_number);
                     token_packet =
-                        compose_packet("token", target_ID, my_id, dest_addr_str,
+                        compose_packet("token", target_ID, my_id, my_addr,
                                        packet_counter, 0, msg_buf);
 
                     // Enqueue packet (or is this done by recv thread?)
@@ -646,6 +657,16 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                 }
 
                 boot_access_point();
+
+                udp_remove(udp_recv_pcb);
+
+                // Initialize UDP recv callback function
+                printf("Initializing recv callback...");
+                if (udp_recv_callback_init()) {
+                    printf("receive callback failed to initialize.");
+                } else {
+                    printf("callback initialized!\n");
+                }
 
                 access_point = true;
                 connected_ID = 0;
@@ -718,6 +739,9 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
         print_packet(buffer, send_buf);
         printf("\n");
 #endif
+
+        // Print new local address
+        printf("What i think is the dest addr: %s\n", ip4addr_ntoa(&dest_addr));
 
         // Send packet
         // cyw43_arch_lwip_begin();
@@ -954,6 +978,8 @@ static PT_THREAD(protothread_serial(struct pt* pt))
         // Spawn thread for non-blocking read
         serial_read;
 
+        printf("dest_addr: %s\n", dest_addr_str);
+
         if (strcmp(pt_serial_in_buffer, "token") == 0) {
             send_queue = compose_packet("token", target_ID, my_id, my_addr,
                                         packet_counter, time_us_64(), "1");
@@ -1030,6 +1056,10 @@ int boot_access_point()
 
     // Print IP address
     printf("My IPv4 addr = %s\n", ip4addr_ntoa(&state->gw));
+
+    // Print new local address
+    printf("My IPv4 addr (I think): %s\n",
+           ip4addr_ntoa(netif_ip4_addr(netif_list)));
 }
 
 int main()
