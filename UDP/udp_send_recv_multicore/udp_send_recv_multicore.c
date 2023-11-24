@@ -162,7 +162,10 @@ typedef struct outgoing_packet {
     char msg[UDP_MSG_LEN_MAX];
 } packet_t;
 
+// Mutexes
 struct mutex send_mutex, ack_mutex;
+
+// Packet queues
 packet_t send_queue, ack_queue;
 
 packet_t compose_packet(char* type, char* addr, int ack, uint64_t t, char* m)
@@ -208,6 +211,7 @@ void copy_field(char* field, char* token)
     }
 }
 
+// Convert a string to a packet
 packet_t string_to_packet(char* s)
 {
     // Not strictly necessary, but the strtok() function is destructive of
