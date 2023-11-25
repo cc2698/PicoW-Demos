@@ -419,6 +419,8 @@ void udp_recv_callback(void* arg, struct udp_pcb* upcb, struct pbuf* p,
     // Prevent "unused argument" compiler warning
     LWIP_UNUSED_ARG(arg);
 
+    printf("Caught something! (received a packet)\n");
+
     if (p != NULL) {
         // Blink the LED
         led_on();
@@ -543,6 +545,10 @@ static PT_THREAD(protothread_connect(struct pt* pt))
 
         signal_connect_thread = false;
 
+        printf("\n\nBegin reconnect:\n");
+        printf("access_point = %d\n", access_point);
+        printf("My ID number = %d\n", my_id);
+        printf("My wifi name = %s\n", wifi_ssid);
         printf("connected_id = %d; target_id = %d; ack_pending = %d\n",
                connected_ID, target_ID, ack_pending);
 
@@ -554,18 +560,29 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             free(state);                      // Free the TCP_SERVER state
             dhcp_server_deinit(&dhcp_server); // disable the dhcp server
 
+            // De-initialize Wifi chip
+            cyw43_arch_deinit();
+
+            // Initialize Wifi chip
+            printf("Initializing cyw43...");
+            if (cyw43_arch_init()) {
+                printf("failed to initialise.\n");
+                return 1;
+            } else {
+                printf("initialized!\n");
+            }
+
             cyw43_arch_enable_sta_mode();
             access_point = false;
 
-            udp_remove(udp_recv_pcb);
-
-            // Initialize UDP recv callback function
-            printf("Initializing recv callback...");
-            if (udp_recv_callback_init()) {
-                printf("receive callback failed to initialize.");
-            } else {
-                printf("callback initialized!\n");
-            }
+            // // Initialize UDP recv callback function
+            // udp_remove(udp_recv_pcb);
+            // printf("Initializing recv callback...");
+            // if (udp_recv_callback_init()) {
+            //     printf("receive callback failed to initialize.");
+            // } else {
+            //     printf("callback initialized!\n");
+            // }
 
             // Set dest addr to the access point
             sprintf(dest_addr_str, "%s", AP_ADDR);
@@ -591,8 +608,8 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                     // Compose token to send
                     sprintf(msg_buf, "%d", id_token_number);
                     token_packet =
-                        compose_packet("token", -1, my_id, dest_addr_str,
-                                       packet_counter, 0, msg_buf);
+                        compose_packet("token", -1, my_id, my_addr,
+                                       packet_counter, time_us_64(), msg_buf);
 
                     // Enqueue packet (or is this done by recv thread?)
                     send_queue = token_packet;
@@ -625,7 +642,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                     sprintf(msg_buf, "%d", id_token_number);
                     token_packet =
                         compose_packet("token", target_ID, my_id, my_addr,
-                                       packet_counter, 0, msg_buf);
+                                       packet_counter, time_us_64(), msg_buf);
 
                     // Enqueue packet (or is this done by recv thread?)
                     send_queue = token_packet;
@@ -643,8 +660,6 @@ static PT_THREAD(protothread_connect(struct pt* pt))
 
                 snprintf(wifi_ssid, SSID_LEN, "picow_%d", my_id);
                 printf("%s\n", wifi_ssid);
-                // cyw43_arch_enable_ap_mode(wifi_ssid, WIFI_PASSWORD,
-                //                           CYW43_AUTH_WPA2_AES_PSK);
 
                 // De-initialize Wifi chip
                 cyw43_arch_deinit();
@@ -660,20 +675,35 @@ static PT_THREAD(protothread_connect(struct pt* pt))
 
                 boot_access_point();
 
-                udp_remove(udp_recv_pcb);
-
-                // Initialize UDP recv callback function
-                printf("Initializing recv callback...");
-                if (udp_recv_callback_init()) {
-                    printf("receive callback failed to initialize.");
-                } else {
-                    printf("callback initialized!\n");
-                }
+                // // Initialize UDP recv callback function
+                // udp_remove(udp_recv_pcb);
+                // printf("Initializing recv callback...");
+                // if (udp_recv_callback_init()) {
+                //     printf("receive callback failed to initialize.");
+                // } else {
+                //     printf("callback initialized!\n");
+                // }
 
                 access_point = true;
                 connected_ID = 0;
             }
         }
+
+        // Initialize UDP recv callback function
+        udp_remove(udp_recv_pcb);
+        printf("Initializing recv callback...");
+        if (udp_recv_callback_init()) {
+            printf("receive callback failed to initialize.");
+        } else {
+            printf("callback initialized!\n");
+        }
+
+        printf("\nEnd reconnect:\n");
+        printf("access_point = %d\n", access_point);
+        printf("My ID number = %d\n", my_id);
+        printf("My wifi name = %s\n", wifi_ssid);
+        printf("connected_id = %d; target_id = %d; ack_pending = %d\n\n\n",
+               connected_ID, target_ID, ack_pending);
 
         PT_YIELD(pt);
     }
@@ -802,7 +832,8 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
             is_token = true;
         }
 
-        printf("%d, %d, %d\n", is_data, is_ack, is_token);
+        printf("Recv type: data = %d, ack = %d, token = %d\n", is_data, is_ack,
+               is_token);
 
 #ifndef PRINT_ON_RECV
         if (strcmp(recv_buf.packet_type, "ack") == 0) {
