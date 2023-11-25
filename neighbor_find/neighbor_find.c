@@ -195,7 +195,7 @@ int find_target(int (*result_cb)(void*, const cyw43_ev_scan_result_t*))
     // Scan options don't matter
     cyw43_wifi_scan_options_t scan_options = {0};
 
-    sprintf(pidog_target_ssid, "");
+    sprintf(target_ssid, "");
 
     printf("Starting Wifi scan...");
 
@@ -527,6 +527,8 @@ int send_queue_id;
 
 bool signal_connect_thread = false;
 
+bool found_neighbors = false;
+
 // =================================================
 // Connection managing thread
 // =================================================
@@ -595,12 +597,15 @@ static PT_THREAD(protothread_connect(struct pt* pt))
 
                 if (strcmp(target_ssid, "") == 0) {
                     printf("No pidogs found\n");
+                    found_neighbors = true;
                     // If no pidogs (uninitialized nodes) were found, hand
                     // the token back to the parent node
                     printf("target ID before: %d\n", target_ID);
                     target_ID = parent_ID;
                     printf("target ID after: %d\n", target_ID);
 
+                    printf("\nNO UNINITIALIZED NEIGHBORS, HAND TOKEN "
+                           "BACKWARDS\n\n");
                 } else if (connect_to_network(target_ssid) == 0) {
 
                     // TODO: Mark as child node
@@ -704,6 +709,18 @@ static PT_THREAD(protothread_connect(struct pt* pt))
         printf("My wifi name = %s\n", wifi_ssid);
         printf("connected_id = %d; target_id = %d; ack_pending = %d\n\n\n",
                connected_ID, target_ID, ack_pending);
+
+        // Print list of neighbors
+        if (found_neighbors) {
+            printf("My ID number: %d", my_id);
+            printf("My neighbors: ");
+            for (int i = 0; i < MAX_NODES; i++) {
+                if (is_nbr[i]) {
+                    printf("%d ", i);
+                }
+            }
+            printf("\n");
+        }
 
         PT_YIELD(pt);
     }
@@ -892,19 +909,22 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
             if (my_id == 0) {
                 printf("Parent ID before = %d\n", parent_ID);
                 printf("My ID before = %d\n", my_id);
-                parent_ID =
-                    recv_buf.src_id; // Parent is whoever gave you the token
-                my_id = ++id_token_number; // Increment the token number
+
+                // Parent is whoever gave you the token
+                parent_ID = recv_buf.src_id;
+                // Increment the token number
+                my_id = ++id_token_number;
+
                 printf("Parent ID after = %d\n", parent_ID);
                 printf("My ID after = %d\n", my_id);
-
-                // Signal connect thread to scan for neighbors
-                target_ID             = -1;
-                signal_connect_thread = true;
 
                 printf("connected_id = %d; target_id = %d; ack_pending = %d\n",
                        connected_ID, target_ID, ack_pending);
             }
+
+            // Signal connect thread to scan for neighbors
+            target_ID             = -1;
+            signal_connect_thread = true;
         }
 
         PT_YIELD(pt);
@@ -1016,6 +1036,15 @@ static PT_THREAD(protothread_serial(struct pt* pt))
         if (strcmp(pt_serial_in_buffer, "token") == 0) {
             send_queue = compose_packet("token", target_ID, my_id, my_addr,
                                         packet_counter, time_us_64(), "1");
+        } else if (strcmp(pt_serial_in_buffer, "nbr") == 0) {
+            // Print list of neighbors
+            printf("My neighbors (by ID): ");
+            for (int i = 0; i < MAX_NODES; i++) {
+                if (is_nbr[i]) {
+                    printf("%d ", i);
+                }
+            }
+            printf("\n");
         } else {
             mutex_enter_blocking(&send_mutex);
             send_queue = compose_packet("data", target_ID, my_id, my_addr,
