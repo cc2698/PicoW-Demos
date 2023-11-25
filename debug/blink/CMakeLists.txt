@@ -24,4 +24,3 @@ pico_add_extra_outputs(blink_usb) # Generate UF2 output
 
 # Compiler optimization
 add_compile_options(-O2)
-

@@ -13,14 +13,13 @@ set(CHRIS_PICO_W_EXAMPLES_PATH ${PROJECT_SOURCE_DIR})
 pico_sdk_init()
 
 # Add multi example
-add_subdirectory(Blink)
 add_subdirectory(Access_Point)
-add_subdirectory(UDP)
-add_subdirectory(picow_wifi_scan)
+add_subdirectory(debug)
 add_subdirectory(neighbor_find)
+add_subdirectory(UDP)
 
 add_compile_options(-Wall
         -Wno-format          # int != int32_t as far as the compiler is concerned because gcc has int32_t as long int
         -Wno-unused-function # we have some for the docs that aren't called
         -Wno-maybe-uninitialized
-        )
+)
