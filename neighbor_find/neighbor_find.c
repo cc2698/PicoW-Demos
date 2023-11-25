@@ -149,16 +149,16 @@ static int scan_callback_2(void* env, const cyw43_ev_scan_result_t* result)
         // *header = '\0';
         snprintf(header, 6, "%s", result->ssid);
 
-        printf("header: %s ssid: %-32s rssi: %4d\n", header, result->ssid,
-               result->rssi);
+        bool result_is_pidog = (strcmp(header, "pidog") == 0);
+        bool result_is_picow = (strcmp(header, "picow") == 0);
 
-        if (strcmp(header, "pidog") == 0) {
-            printf("Setting pidog target ssid, old target = %s\n", target_ssid);
+        if (result_is_pidog) {
+            printf("\tssid: %-32s rssi: %4d\t<-- Uninitialized node\n",
+                   result->ssid, result->rssi);
             snprintf(target_ssid, SSID_LEN, "%s", result->ssid);
-            printf("Setting pidog target ssid, new target = %s\n", target_ssid);
         }
 
-        if (strcmp(header, "picow") == 0) {
+        if (result_is_picow) {
             // Separate the ID number from the SSID: picow_<ID>
             char tbuf[UDP_MSG_LEN_MAX];
             sprintf(tbuf, "%s", result->ssid);
@@ -175,7 +175,7 @@ static int scan_callback_2(void* env, const cyw43_ev_scan_result_t* result)
             // Mark as neighbor
             is_nbr[id] = true;
 
-            printf("nbr\tssid: %-32s rssi: %4d, ID: %3d\n", result->ssid,
+            printf("\tssid: %-32s rssi: %4d\t<-- ID = %d\n", result->ssid,
                    result->rssi, id);
         }
     }
@@ -210,7 +210,12 @@ int find_target(int (*result_cb)(void*, const cyw43_ev_scan_result_t*))
         return 1;
     }
 
-    sleep_ms(5000);
+    // sleep_ms(5000);
+
+    sleep_ms(500);
+    while (cyw43_wifi_scan_active(&cyw43_state)) {
+        // Block until scan is complete
+    }
 
     return 0;
 }
@@ -590,9 +595,14 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             sprintf(dest_addr_str, "%s", AP_ADDR);
 
             if (target_ID == -1) {
-                printf("Giving time for the AP to boot\n");
-                sleep_ms(3000);
+                printf("Giving time for the AP to boot");
+                for (int i = 0; i < 10; i++) {
+                    printf(".");
+                    sleep_ms(300);
+                }
+                printf("\n");
 
+                // Scan for targets
                 find_target(scan_callback_2);
 
                 if (strcmp(target_ssid, "") == 0) {
@@ -600,9 +610,9 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                     found_neighbors = true;
                     // If no pidogs (uninitialized nodes) were found, hand
                     // the token back to the parent node
-                    printf("target ID before: %d\n", target_ID);
+                    printf("Changing target ID: %d --> ", target_ID);
                     target_ID = parent_ID;
-                    printf("target ID after: %d\n", target_ID);
+                    printf("%d\n", target_ID);
 
                     printf("\nNO UNINITIALIZED NEIGHBORS, HAND TOKEN "
                            "BACKWARDS\n\n");
@@ -628,14 +638,6 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                 // Connect to someone else's network
                 snprintf(target_ssid, SSID_LEN, "picow_%d", target_ID);
 
-                printf("Giving time for the AP to boot\n");
-                sleep_ms(3000);
-                printf("Giving time for the AP to boot\n");
-                sleep_ms(3000);
-                printf("Giving time for the AP to boot\n");
-                sleep_ms(3000);
-
-                printf("Trying to connect to network: %s\n", target_ssid);
                 if (connect_to_network(target_ssid) == 0) {
                     // If successful, change the connected_id number
                     connected_ID = target_ID;
@@ -664,7 +666,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                 cyw43_arch_disable_sta_mode();
 
                 snprintf(wifi_ssid, SSID_LEN, "picow_%d", my_id);
-                printf("%s\n", wifi_ssid);
+                printf("My wifi ssid: %s\n", wifi_ssid);
 
                 // De-initialize Wifi chip
                 cyw43_arch_deinit();
@@ -712,7 +714,8 @@ static PT_THREAD(protothread_connect(struct pt* pt))
 
         // Print list of neighbors
         if (found_neighbors) {
-            printf("My ID number: %d", my_id);
+            printf("\x1b[32m");
+            printf("My ID number: %d\n", my_id);
             printf("My neighbors: ");
             for (int i = 0; i < MAX_NODES; i++) {
                 if (is_nbr[i]) {
@@ -720,6 +723,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                 }
             }
             printf("\n");
+            printf("\x1b[0m");
         }
 
         PT_YIELD(pt);
@@ -1116,12 +1120,11 @@ int boot_access_point()
     // Set 'mask' as defined above
     dhcp_server_init(&dhcp_server, &state->gw, &mask);
 
-    // Print IP address
-    printf("My IPv4 addr = %s\n", ip4addr_ntoa(&state->gw));
+    // // Print IP address (old method)
+    // printf("My IPv4 addr = %s\n", ip4addr_ntoa(&state->gw));
 
-    // Print new local address
-    printf("My IPv4 addr (I think): %s\n",
-           ip4addr_ntoa(netif_ip4_addr(netif_list)));
+    // Print IP address (potentially better method)
+    printf("My IPv4 addr: %s\n", ip4addr_ntoa(netif_ip4_addr(netif_list)));
 }
 
 int main()
