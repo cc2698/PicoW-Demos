@@ -11,7 +11,6 @@
 #include "pico/cyw43_arch.h"
 #include "pico/multicore.h"
 #include "pico/stdlib.h"
-#include "pico/unique_id.h"
 
 // Hardware
 #include "hardware/irq.h"
@@ -66,8 +65,8 @@ struct pt_sem new_udp_send_s;
 
 // UDP ack
 packet_t ack_queue;
-bool ack_pending         = false;
-char return_addr_str[20] = "255.255.255.255";
+bool ack_pending                  = false;
+char return_addr_str[IP_ADDR_LEN] = "255.255.255.255";
 static ip_addr_t return_addr;
 static struct udp_pcb* udp_ack_pcb;
 struct pt_sem new_udp_ack_s;
@@ -138,14 +137,15 @@ void print_neighbors()
     print_green;
     printf("\n");
     printf("NEIGHBOR SEARCH RESULTS:\n");
-    printf("My ID number: %d\n", self.ID);
-    printf("My neighbors: ");
+    printf("My ID number:     %d\n", self.ID);
+    printf("Parent ID number: %d\n", self.parent_ID);
+    printf("My neighbors:    [");
     for (int i = 0; i < MAX_NODES; i++) {
         if (self.ID_is_nbr[i]) {
             printf("%d ", i);
         }
     }
-    printf("\n");
+    printf("]\n");
     print_reset;
 }
 
@@ -263,9 +263,6 @@ static PT_THREAD(protothread_connect(struct pt* pt))
     static packet_t token_packet;
     static char msg_buf[TOK_LEN];
 
-    // SSID used when hosting access point
-    static char my_wifi_ssid[SSID_LEN];
-
     static int connect_err;
 
     while (true) {
@@ -295,7 +292,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             boot_station();
 
             // Set dest addr to the access point
-            sprintf(dest_addr_str, "%s", AP_ADDR);
+            snprintf(dest_addr_str, IP_ADDR_LEN, "%s", AP_ADDR);
 
             if (target_ID == RUN_SCAN) {
                 printf("Waiting for nearby APs to boot:\n\t");
@@ -315,7 +312,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                         // TODO: Mark as child node
 
                         // Compose token to send
-                        sprintf(msg_buf, "%d", token_id_number);
+                        snprintf(msg_buf, TOK_LEN, "%d", token_id_number);
                         token_packet =
                             new_packet("token", -1, self.ID, self.ip_addr,
                                        packet_counter, time_us_64(), msg_buf);
@@ -330,7 +327,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                     // Flag that neighbors have been recorded
                     found_neighbors = true;
 
-                    if (self.ID == 1) {
+                    if (self.ID == MASTER_ID) {
                         // Master node has received token back, and has no
                         // uninitialized neighbors.
 
@@ -339,8 +336,8 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                         signal_connect_thread = true;
                         target_ID             = 0;
                     } else {
-                        // If no pidogs (uninitialized nodes) were found, hand
-                        // the token back to the parent node
+                        // If node is not the master node, hand the token back
+                        // to the parent node
                         target_ID = self.parent_ID;
 
                         print_yellow;
@@ -363,7 +360,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                     connected_ID = target_ID;
 
                     // Compose token to send
-                    sprintf(msg_buf, "%d", token_id_number);
+                    snprintf(msg_buf, TOK_LEN, "%d", token_id_number);
                     token_packet =
                         new_packet("token", target_ID, self.ID, self.ip_addr,
                                    packet_counter, time_us_64(), msg_buf);
@@ -391,8 +388,8 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                 }
 
                 // Turn on the access point
-                snprintf(my_wifi_ssid, SSID_LEN, "picow_%d", self.ID);
-                boot_ap(my_wifi_ssid);
+                snprintf(self.wifi_ssid, SSID_LEN, "picow_%d", self.ID);
+                boot_ap(self.wifi_ssid);
 
                 connected_ID = 0;
             }
@@ -588,18 +585,19 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
             // If I don't have an ID yet, give myself one
             if (self.ID == 0) {
                 printf("Assigning myself an ID number:\n");
-                printf("\tParent ID: %3d --> ", self.parent_ID);
-
-                // Parent node is whoever gave you the token
-                self.parent_ID = recv_buf.src_id;
-
-                printf("%3d\n", self.parent_ID);
                 printf("\tMy ID:     %3d --> ", self.ID);
 
                 // Increment the token number, use that as my ID
                 self.ID = ++token_id_number;
 
                 printf("%3d\n", self.ID);
+
+                printf("\tParent ID: %3d --> ", self.parent_ID);
+
+                // Parent node is whoever gave you the token
+                self.parent_ID = recv_buf.src_id;
+
+                printf("%3d\n", self.parent_ID);
             }
 
             // Signal connect thread to scan for neighbors
@@ -764,7 +762,7 @@ int main()
     print_bold;
 
     // Print out whether you're an AP or a station
-    printf("\n\n==================== NF %s v3 ====================\n\n",
+    printf("\n\n==================== NF %s v4 ====================\n\n",
            (is_master ? "Master" : "Node"));
 
     // Initialize this node
@@ -795,17 +793,8 @@ int main()
         connect_to_network(target_ssid);
 
     } else {
-        // Initialize as pidog_<hex ID>
-        char unique_board_id[20];
-        pico_get_unique_board_id_string(
-            unique_board_id, 2 * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 2);
-
-        // SSID used when hosting access point
-        char my_wifi_ssid[SSID_LEN];
-        snprintf(my_wifi_ssid, SSID_LEN, "pidog_%s", unique_board_id);
-
         // Turn on the access point
-        boot_ap(my_wifi_ssid);
+        boot_ap(self.wifi_ssid);
     }
 
     // Initialize UDP recv callback function

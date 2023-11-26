@@ -17,11 +17,10 @@
 
 // Local
 #include "connect.h"
-#include "node.h"
 
 int access_point = true;
 
-char dest_addr_str[20] = "255.255.255.255";
+char dest_addr_str[IP_ADDR_LEN] = "255.255.255.255";
 
 // Bruce Land's TCP server structure. Stores metadata for an access point
 // hosted by a Pico-W. This includes the IPv4 address.
@@ -52,7 +51,7 @@ int boot_ap(char* ssid)
     // Enable access point
     cyw43_arch_enable_ap_mode(ssid, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK);
     printf("Access point mode enabled!\n");
-    printf("\tSSID = %s\n", ssid);
+    printf("\tssid = %s\n", ssid);
 
     // The variable 'state' is a pointer to a TCP_SERVER_T struct
     // Set up the access point IP address and mask
@@ -60,8 +59,8 @@ int boot_ap(char* ssid)
     ipaddr_aton(MASK_ADDR, ip_2_ip4(&mask));
 
     // Configure target IP address
-    sprintf(self.ip_addr, AP_ADDR);
-    sprintf(dest_addr_str, "%s", STATION_ADDR);
+    snprintf(self.ip_addr, IP_ADDR_LEN, "%s", AP_ADDR);
+    snprintf(dest_addr_str, IP_ADDR_LEN, "%s", STATION_ADDR);
 
     // Start the Dynamic Host Configuration Protocol (DHCP) server. Even though
     // in the program DHCP is not required, LwIP seems to need it!
@@ -142,12 +141,12 @@ int connect_to_network(char* ssid)
         return 1;
     } else {
         printf("connected!\n");
-        printf("\tnetwork  = %-25s\n", ssid);
+        printf("\tssid     = %-25s\n", ssid);
         printf("\tpassword = %s\n", WIFI_PASSWORD);
 
         // Configure target IP address
-        sprintf(self.ip_addr, STATION_ADDR);
-        sprintf(dest_addr_str, "%s", AP_ADDR);
+        snprintf(self.ip_addr, IP_ADDR_LEN, "%s", STATION_ADDR);
+        snprintf(dest_addr_str, IP_ADDR_LEN, "%s", AP_ADDR);
 
         // Print address assigned by DHCP
         printf("\tSet IPv4 addr: %s (DHCP) --> ",

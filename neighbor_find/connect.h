@@ -1,6 +1,9 @@
 #ifndef CONNECT_H
 #define CONNECT_H
 
+// Local
+#include "node.h"
+
 // Wifi password
 #define WIFI_PASSWORD "password"
 // #define WIFI_PASSWORD NULL
@@ -14,10 +17,10 @@
 extern int access_point;
 
 // My IPv4 address
-extern char my_addr[20];
+extern char my_addr[IP_ADDR_LEN];
 
 // (Placeholder) Destination IPv4 address
-extern char dest_addr_str[20];
+extern char dest_addr_str[IP_ADDR_LEN];
 
 // Boot up the access point, returns 0 on success.
 int boot_ap();

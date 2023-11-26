@@ -69,7 +69,7 @@ packet_t str_to_packet(char* s)
     // its inputs therefore we copy the recv buffer into a temporary
     // variable to avoid messing with it directly.
     char tbuf[UDP_MSG_LEN_MAX];
-    sprintf(tbuf, "%s", s);
+    snprintf(tbuf, UDP_MSG_LEN_MAX, "%s", s);
 
     packet_t op;
 

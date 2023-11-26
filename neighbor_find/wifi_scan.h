@@ -1,8 +1,8 @@
 #ifndef WIFI_SCAN_H
 #define WIFI_SCAN_H
 
-// Maximum acceptable SSID length
-#define SSID_LEN 50
+// Local
+#include "node.h"
 
 // Scan result when no pidogs are found
 #define NO_UNINITIALIZED_NBRS "none"

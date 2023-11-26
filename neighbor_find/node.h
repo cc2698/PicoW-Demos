@@ -8,21 +8,28 @@
 #define MASTER_ID  1
 #define DEFAULT_ID 0
 
-// Node
+// Max SSID length
+#define SSID_LEN 50
+
+// Max IP address length (slightly bigger than an IPv4 address)
+#define IP_ADDR_LEN 20
+
+// Node struct
 typedef struct node {
-    int ID;                   // ID number
-    int parent_ID;            // Parent node ID number
-    char ip_addr[20];         // IPv4 address
-    int ID_is_nbr[MAX_NODES]; // True if ID is a neighbor
+    int ID;                    // ID number
+    int parent_ID;             // Parent node ID number
+    char ip_addr[IP_ADDR_LEN]; // IPv4 address
+    int ID_is_nbr[MAX_NODES];  // True if ID is a neighbor
+    char wifi_ssid[SSID_LEN];  // My SSID when hosting an access point
 
 } node_t;
 
-// Neighbor
+// Neighbor struct
 typedef struct nbr {
     int ID;
 } nbr_t;
 
-// My own metadata
+// Contains all of the properties of this node
 extern node_t self;
 
 // Create a new node with default values
