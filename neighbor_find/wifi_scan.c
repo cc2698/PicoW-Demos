@@ -18,7 +18,7 @@ char pidog_target_ssid[SSID_LEN];
 int is_nbr[MAX_NODES];
 
 // Scan callback function
-static int scan_callback_2(void* env, const cyw43_ev_scan_result_t* result)
+static int scan_callback(void* env, const cyw43_ev_scan_result_t* result)
 {
     if (result) {
         char header[10] = "";
@@ -62,7 +62,7 @@ static int scan_callback_2(void* env, const cyw43_ev_scan_result_t* result)
 }
 
 // Initiate a wifi scan
-int find_target()
+int scan_wifi()
 {
     // Scan options don't matter
     cyw43_wifi_scan_options_t scan_options = {0};
@@ -74,8 +74,7 @@ int find_target()
 
     // This function scans for nearby Wifi networks and runs the
     // callback function each time a network is found.
-    int err =
-        cyw43_wifi_scan(&cyw43_state, &scan_options, NULL, scan_callback_2);
+    int err = cyw43_wifi_scan(&cyw43_state, &scan_options, NULL, scan_callback);
 
     if (err == 0) {
         printf("scan started successfully!\n");
