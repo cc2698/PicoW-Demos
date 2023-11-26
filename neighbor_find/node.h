@@ -10,9 +10,11 @@
 
 // Node
 typedef struct node {
-    int ID;           // ID number
-    int parent_ID;    // Parent node ID number
-    char ip_addr[20]; // IPv4 address
+    int ID;                   // ID number
+    int parent_ID;            // Parent node ID number
+    char ip_addr[20];         // IPv4 address
+    int ID_is_nbr[MAX_NODES]; // True if ID is a neighbor
+
 } node_t;
 
 // Neighbor

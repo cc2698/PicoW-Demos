@@ -132,20 +132,21 @@ int64_t alarm_callback(alarm_id_t id, void* user_data)
  *  NEIGHBORS
  */
 
+// Print list of neighbors
 void print_neighbors()
 {
-    printf("\n");
     print_green;
+    printf("\n");
     printf("NEIGHBOR SEARCH RESULTS:\n");
     printf("My ID number: %d\n", self.ID);
     printf("My neighbors: ");
     for (int i = 0; i < MAX_NODES; i++) {
-        if (is_nbr[i]) {
+        if (self.ID_is_nbr[i]) {
             printf("%d ", i);
         }
     }
-    print_reset;
     printf("\n");
+    print_reset;
 }
 
 /*
@@ -408,6 +409,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
 
         // Print list of neighbors
         if (found_neighbors && access_point) {
+            // Print list of neighbors
             print_neighbors();
         }
 
@@ -750,23 +752,20 @@ int main()
     // Initialize all stdio types
     stdio_init_all();
 
-// If this pico is hosting an AP, set access_point to true. The macro is defined
+// If this pico is the master node, set is_master to true. The macro is defined
 // at compile-time by CMake allowing for the same file to be compiled into two
 // separate binaries, one for the access point and one for the station.
-#ifdef AP
-    access_point   = true;
-    bool is_master = false;
-#else
-    access_point   = false;
-    self.ID        = 1;
+#ifdef MASTER
     bool is_master = true;
+#else
+    bool is_master = false;
 #endif
 
     print_bold;
 
     // Print out whether you're an AP or a station
-    printf("\n\n==================== %s v3 ====================\n\n",
-           (access_point ? "NF Node" : "NF Master"));
+    printf("\n\n==================== NF %s v3 ====================\n\n",
+           (is_master ? "Master" : "Node"));
 
     // Initialize this node
     self = new_node(is_master);
@@ -780,7 +779,22 @@ int main()
         printf("initialized!\n");
     }
 
-    if (access_point) {
+    if (is_master) {
+        // If all Pico-Ws boot at the same time, this delay gives the other
+        // nodes time to setup before the master tries to scan.
+        sleep_ms(1000);
+
+        // Enable station mode
+        boot_station();
+
+        // Perform a wifi scan, copy the result to target_ssid
+        scan_wifi();
+        snprintf(target_ssid, SSID_LEN, "%s", scan_result);
+
+        // Connect to the target
+        connect_to_network(target_ssid);
+
+    } else {
         // Initialize as pidog_<hex ID>
         char unique_board_id[20];
         pico_get_unique_board_id_string(
@@ -792,21 +806,6 @@ int main()
 
         // Turn on the access point
         boot_ap(my_wifi_ssid);
-
-    } else {
-        // If all Pico-Ws boot at the same time, this delay gives the access
-        // point time to setup before the client tries to connect.
-        sleep_ms(1000);
-
-        // Enable station mode
-        boot_station();
-
-        // Perform a wifi scan, copy the result to target_ssid
-        scan_wifi();
-        snprintf(target_ssid, SSID_LEN, "%s", scan_result);
-
-        // Connect to the access point
-        connect_to_network(target_ssid);
     }
 
     // Initialize UDP recv callback function
