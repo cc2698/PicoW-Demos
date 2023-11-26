@@ -28,6 +28,7 @@ pico_sdk_init()
 add_executable(nbr_find_master)
 pico_enable_stdio_usb(nbr_find_master 0)
 pico_enable_stdio_uart(nbr_find_master 1)
+target_compile_definitions(nbr_find_master PRIVATE MASTER)
 target_sources(nbr_find_master PRIVATE
 		neighbor_find.c
 		connect.c
@@ -62,7 +63,6 @@ target_sources(nbr_find PRIVATE
 		wifi_scan.c
 		dhcpserver/dhcpserver.c
 )
-target_compile_definitions(nbr_find PRIVATE AP)
 target_include_directories(nbr_find PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
 		${CMAKE_CURRENT_LIST_DIR}/dhcpserver
