@@ -146,6 +146,35 @@ void print_neighbors()
 }
 
 /*
+ *  MISC
+ */
+
+// Sleep and animate a progress bar
+void progress_bar_blocking(uint16_t bar_ms, int bar_len)
+{
+    // Bar length and dot interval
+    int ms       = bar_ms > 9999 ? 9999 : bar_ms;
+    int len      = bar_len > 40 ? 40 : bar_len;
+    int interval = (int) (ms / len);
+
+    // Print progress bar bookends
+    printf("[%*c]", len, ' ');
+
+    // Return to start of bar
+    for (int i = 0; i < len + 1; i++) {
+        printf("\b");
+        // sleep_ms(interval);
+    }
+
+    // Animate dots
+    for (int i = 0; i < len; i++) {
+        printf(".");
+        sleep_ms(interval);
+    }
+    printf("\n");
+}
+
+/*
  *	UDP CALLBACK SETUP
  */
 
@@ -269,12 +298,8 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             sprintf(dest_addr_str, "%s", AP_ADDR);
 
             if (target_ID == -1) {
-                printf("Waiting for nearby APs to boot");
-                for (int i = 0; i < 30; i++) {
-                    printf(".");
-                    sleep_ms(75);
-                }
-                printf("\n");
+                printf("Waiting for nearby APs to boot:\n\t");
+                progress_bar_blocking(2000, 25);
 
                 // Scan for targets
                 scan_wifi();
