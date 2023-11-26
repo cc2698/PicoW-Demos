@@ -97,6 +97,15 @@ volatile int led_state = LOW;
     } while (0);
 
 /*
+ *  PRINTF COLORS
+ */
+
+#define print_green  printf("\x1b[32m")
+#define print_yellow printf("\x1b[33m")
+#define print_cyan   printf("\x1b[36m")
+#define print_reset  printf("\x1b[0m")
+
+/*
  *  ALARM
  */
 
@@ -123,7 +132,7 @@ int my_id = 0;
 void print_neighbors()
 {
     printf("\n");
-    printf("\x1b[32m");
+    print_green;
     printf("NEIGHBOR SEARCH RESULTS:\n");
     printf("My ID number: %d\n", my_id);
     printf("My neighbors: ");
@@ -132,7 +141,7 @@ void print_neighbors()
             printf("%d ", i);
         }
     }
-    printf("\x1b[0m");
+    print_reset;
     printf("\n");
 }
 
@@ -238,14 +247,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             // Switch to station mode
             printf("Switch to station mode!\n");
 
-            // cyw43_arch_disable_ap_mode();
-
-            // // Free the TCP_SERVER state
-            // free(state);
-
-            // // Disable the DHCP server
-            // dhcp_server_deinit(&dhcp_server);
-
+            // Disable access point
             shutdown_ap();
 
             // Re-initialize Wifi chip
@@ -296,7 +298,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                         PT_SEM_SAFE_SIGNAL(pt, &new_udp_send_s);
                     }
                 } else {
-                    printf("No pidogs found\n");
+                    // Flag that neighbors have been recorded
                     found_neighbors = true;
 
                     if (my_id == 1) {
@@ -312,8 +314,10 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                         target_ID = parent_ID;
                         printf("%d\n", target_ID);
 
-                        printf("\nNO UNINITIALIZED NEIGHBORS, HAND TOKEN "
-                               "BACKWARDS\n\n");
+                        print_yellow;
+                        printf("\nNO UNINITIALIZED NEIGHBORS, SEND TOKEN "
+                               "BACK TO PARENT NODE\n\n");
+                        print_reset;
                     }
                 }
             }
@@ -360,7 +364,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                 }
 
                 // Turn on the access point
-                boot_access_point(my_wifi_ssid);
+                boot_ap(my_wifi_ssid);
 
                 connected_ID = 0;
             }
@@ -438,9 +442,10 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
 
 #ifdef PRINT_ON_SEND
         // Print formatted packet contents
+        print_cyan;
         printf("| Outgoing...\n");
         print_packet(buffer, send_buf);
-        printf("\n");
+        print_reset;
 #endif
 
         // Print new local address
@@ -508,13 +513,14 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         }
 #else
         // Print formatted packet contents
+        print_cyan;
         printf("| Incoming...\n");
         print_packet(recv_data, recv_buf);
         if (is_ack) {
             rtt_ms = (time_us_64() - recv_buf.timestamp) / 1000.0f;
-            printf("|\tRTT: %.2f ms\n", rtt_ms);
+            printf("|\tRTT:       %.2f ms\n", rtt_ms);
         }
-        printf("\n");
+        print_reset;
 #endif
 
         // If data or token was received, respond with ACK
@@ -629,9 +635,10 @@ static PT_THREAD(protothread_udp_ack(struct pt* pt))
 
 #ifdef PRINT_ON_SEND
         // Print formatted packet contents
+        print_cyan;
         printf("| Outgoing...\n");
         print_packet(buffer, ack_buf);
-        printf("\n");
+        print_reset;
 #endif
 
         // Send packet
@@ -749,7 +756,7 @@ int main()
         snprintf(my_wifi_ssid, SSID_LEN, "pidog_%s", unique_board_id);
 
         // Turn on the access point
-        boot_access_point(my_wifi_ssid);
+        boot_ap(my_wifi_ssid);
 
     } else {
         // If all Pico-Ws boot at the same time, this delay gives the access

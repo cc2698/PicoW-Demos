@@ -20,7 +20,7 @@ extern char my_addr[20];
 extern char dest_addr_str[20];
 
 // Boot up the access point, returns 0 on success.
-int boot_access_point();
+int boot_ap();
 
 // Shutdown the access point, DHCP, and free the TCP_SERVER state
 void shutdown_ap();
