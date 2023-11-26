@@ -16,7 +16,7 @@
 #include "hardware/timer.h"
 
 // Protothreads
-#include "pt_cornell_rp2040_v1_1_2.h"
+#include "protothreads/pt_cornell_rp2040_v1_1_2.h"
 
 // Lightweight IP
 #include "lwip/udp.h" // Includes other necessary LwIP libraries

@@ -38,6 +38,8 @@ target_sources(nbr_find_master PRIVATE
 target_include_directories(nbr_find_master PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
 		${CMAKE_CURRENT_LIST_DIR}/dhcpserver
+		${CMAKE_CURRENT_LIST_DIR}/lwipopts
+		${CMAKE_CURRENT_LIST_DIR}/protothreads
 )
 target_link_libraries(nbr_find_master PRIVATE
 		pico_cyw43_arch
@@ -62,6 +64,8 @@ target_compile_definitions(nbr_find PRIVATE AP)
 target_include_directories(nbr_find PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
 		${CMAKE_CURRENT_LIST_DIR}/dhcpserver
+		${CMAKE_CURRENT_LIST_DIR}/lwipopts
+		${CMAKE_CURRENT_LIST_DIR}/protothreads
 )
 target_link_libraries(nbr_find PRIVATE
 		pico_cyw43_arch
