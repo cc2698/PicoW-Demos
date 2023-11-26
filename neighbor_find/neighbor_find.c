@@ -25,6 +25,7 @@
 #include "dhcpserver/dhcpserver.h"
 
 // Local
+#include "connect.h"
 #include "packet.h"
 #include "wifi_scan.h"
 
@@ -41,27 +42,13 @@
  */
 
 // Properties
-int access_point   = true;
 int packet_counter = 0;
-char my_addr[20]   = "255.255.255.255";
 
 // SSID of the target access point
 char target_ssid[SSID_LEN];
 
-// My SSID
-char wifi_ssid[SSID_LEN];
-
 // UDP constants
 #define UDP_PORT 4444 // Same port number on both devices
-
-// IP addresses
-#define AP_ADDR      "192.168.4.1"
-#define STATION_ADDR "192.168.4.10"
-#define MASK_ADDR    "255.255.255.0"
-
-// Wifi name and password
-#define WIFI_PASSWORD "password"
-// #define WIFI_PASSWORD NULL
 
 // UDP recv
 char recv_data[UDP_MSG_LEN_MAX];
@@ -70,7 +57,6 @@ struct pt_sem new_udp_recv_s;
 
 // UDP send
 packet_t send_queue;
-char dest_addr_str[20] = "255.255.255.255";
 static ip_addr_t dest_addr;
 static struct udp_pcb* udp_send_pcb;
 struct pt_sem new_udp_send_s;
@@ -82,25 +68,6 @@ char return_addr_str[20] = "255.255.255.255";
 static ip_addr_t return_addr;
 static struct udp_pcb* udp_ack_pcb;
 struct pt_sem new_udp_ack_s;
-
-// Bruce Land's TCP server structure. Stores metadata for an access point hosted
-// by a Pico-W. This includes the IPv4 address.
-typedef struct TCP_SERVER_T_ {
-    struct tcp_pcb* server_pcb;
-    bool complete;
-    ip_addr_t gw;
-    async_context_t* context;
-} TCP_SERVER_T;
-
-TCP_SERVER_T* state;
-ip4_addr_t mask;
-dhcp_server_t dhcp_server;
-
-// Boot up the access point, returns 0 on success.
-int boot_access_point();
-
-// Shutdown the access point, DHCP, and free the TCP_SERVER state
-void shutdown_ap();
 
 /*
  *  LED
@@ -145,6 +112,28 @@ int64_t alarm_callback(alarm_id_t id, void* user_data)
 {
     led_off();
     return 0; // Returns 0 to not reschedule the alarm
+}
+
+/*
+ *  NEIGHBORS
+ */
+
+int my_id = 0;
+
+void print_neighbors()
+{
+    printf("\n");
+    printf("\x1b[32m");
+    printf("NEIGHBOR SEARCH RESULTS:\n");
+    printf("My ID number: %d\n", my_id);
+    printf("My neighbors: ");
+    for (int i = 0; i < MAX_NODES; i++) {
+        if (is_nbr[i]) {
+            printf("%d ", i);
+        }
+    }
+    printf("\x1b[0m");
+    printf("\n");
 }
 
 /*
@@ -212,45 +201,6 @@ int udp_recv_callback_init(void)
 int connected_ID = 0;
 int target_ID    = 0;
 
-// Connect to a network and set a new IP address
-int connect_to_network(char* ssid)
-{
-    if (access_point) {
-        printf("ERROR: Can't connect to a network while in AP mode.\n");
-        return 1;
-    }
-
-    // Connect to the access point
-    printf("Connecting to %s...", ssid);
-    if (cyw43_arch_wifi_connect_timeout_ms(ssid, WIFI_PASSWORD,
-                                           CYW43_AUTH_WPA2_AES_PSK, 30000)) {
-        printf("failed to connect.\n");
-        return 1;
-    } else {
-        printf("connected!:\n");
-        printf("\tSSID = %-25s\tPASS = %s\n", ssid, WIFI_PASSWORD);
-
-        // Configure target IP address
-        sprintf(my_addr, STATION_ADDR);
-        sprintf(dest_addr_str, "%s", AP_ADDR);
-
-        // Print address assigned by DCHP
-        printf("\tConnected as: %s - ",
-               ip4addr_ntoa(netif_ip4_addr(netif_list)));
-
-        // Set local address, override the address assigned by DHCP
-        ip_addr_t ip;
-        ipaddr_aton(STATION_ADDR, &ip);
-        netif_set_ipaddr(netif_default, &ip);
-
-        // Print new local address
-        printf("Modified to %s\n", ip4addr_ntoa(netif_ip4_addr(netif_list)));
-
-        return 0;
-    }
-}
-
-int my_id = 0;
 struct pt_sem connect_sem;
 int id_token_number;
 
@@ -275,18 +225,14 @@ static PT_THREAD(protothread_connect(struct pt* pt))
     static packet_t token_packet;
     static char msg_buf[TOK_LEN];
 
+    // SSID used when hosting access point
+    char my_wifi_ssid[SSID_LEN];
+
     while (true) {
         PT_YIELD_UNTIL(pt, signal_connect_thread && !ack_pending);
 
         // Reset the signal flag
         signal_connect_thread = false;
-
-        // printf("\n\nBegin reconnect:\n");
-        // printf("access_point = %d\n", access_point);
-        // printf("My ID number = %d\n", my_id);
-        // printf("My wifi name = %s\n", wifi_ssid);
-        // printf("connected_id = %d; target_id = %d; ack_pending = %d\n",
-        //        connected_ID, target_ID, ack_pending);
 
         if (access_point) {
             // Switch to station mode
@@ -401,7 +347,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                 printf("Switch to AP mode!\n");
                 cyw43_arch_disable_sta_mode();
 
-                snprintf(wifi_ssid, SSID_LEN, "picow_%d", my_id);
+                snprintf(my_wifi_ssid, SSID_LEN, "picow_%d", my_id);
 
                 // Re-initialize Wifi chip
                 cyw43_arch_deinit();
@@ -413,7 +359,8 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                     printf("initialized!\n");
                 }
 
-                boot_access_point();
+                // Turn on the access point
+                boot_access_point(my_wifi_ssid);
 
                 connected_ID = 0;
             }
@@ -428,26 +375,9 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             printf("success!\n");
         }
 
-        // printf("\nEnd reconnect:\n");
-        // printf("access_point = %d\n", access_point);
-        // printf("My ID number = %d\n", my_id);
-        // printf("My wifi name = %s\n", wifi_ssid);
-        // printf("connected_id = %d; target_id = %d; ack_pending = %d\n\n\n",
-        //        connected_ID, target_ID, ack_pending);
-
         // Print list of neighbors
         if (found_neighbors && access_point) {
-            printf("\x1b[32m");
-            printf("NEIGHBOR SEARCH RESULTS:\n");
-            printf("My ID number: %d\n", my_id);
-            printf("My neighbors: ");
-            for (int i = 0; i < MAX_NODES; i++) {
-                if (is_nbr[i]) {
-                    printf("%d ", i);
-                }
-            }
-            printf("\n");
-            printf("\x1b[0m");
+            print_neighbors();
         }
 
         PT_YIELD(pt);
@@ -751,17 +681,7 @@ static PT_THREAD(protothread_serial(struct pt* pt))
 
         } else if (strcmp(pt_serial_in_buffer, "nbr") == 0) {
             // Print list of neighbors
-            printf("\x1b[32m");
-            printf("NEIGHBOR SEARCH RESULTS:\n");
-            printf("My ID number: %d\n", my_id);
-            printf("My neighbors: ");
-            for (int i = 0; i < MAX_NODES; i++) {
-                if (is_nbr[i]) {
-                    printf("%d ", i);
-                }
-            }
-            printf("\n");
-            printf("\x1b[0m");
+            print_neighbors();
 
         } else {
             send_queue =
@@ -789,76 +709,6 @@ void core_1_main()
 /*
  *  CORE 0 MAIN
  */
-
-int boot_access_point()
-{
-    // Allocate TCP server state
-    state = calloc(1, sizeof(TCP_SERVER_T));
-    printf("Allocating TCP server state...");
-    if (!state) {
-        printf("failed to allocate state.\n");
-        return 1;
-    } else {
-        printf("allocated!\n");
-    }
-
-    // Turn on access point
-    cyw43_arch_enable_ap_mode(wifi_ssid, WIFI_PASSWORD,
-                              CYW43_AUTH_WPA2_AES_PSK);
-    printf("Access point mode enabled!\n");
-    printf("\tSSID = %s\n", wifi_ssid);
-
-    // The variable 'state' is a pointer to a TCP_SERVER_T struct
-    // Set up the access point IP address and mask
-    ipaddr_aton(AP_ADDR, ip_2_ip4(&state->gw));
-    ipaddr_aton(MASK_ADDR, ip_2_ip4(&mask));
-
-    // Configure target IP address
-    sprintf(my_addr, AP_ADDR);
-    sprintf(dest_addr_str, "%s", STATION_ADDR);
-
-    // Start the Dynamic Host Configuration Protocol (DHCP) server. Even though
-    // in the program DHCP is not required, LwIP seems to need it!
-    //      - Bruce Land
-    //
-    // I believe that DHCP is what assigns the Pico-W client an initial
-    // IP address, which can be changed manually later.
-    //      - Chris
-    //
-    // Set the Pico-W IP address from the 'state' structure
-    // Set 'mask' as defined above
-    dhcp_server_init(&dhcp_server, &state->gw, &mask);
-
-    // // Print IP address (old method)
-    // printf("My IPv4 addr = %s\n", ip4addr_ntoa(&state->gw));
-
-    // Print IP address (potentially better method)
-    printf("\tIPv4 addr: %s\n", ip4addr_ntoa(netif_ip4_addr(netif_list)));
-
-    // Set flag
-    access_point = true;
-
-    led_on();
-
-    return 0;
-}
-
-void shutdown_ap()
-{
-    // Disable AP mode
-    cyw43_arch_disable_ap_mode();
-
-    // Disable the DHCP server
-    dhcp_server_deinit(&dhcp_server);
-
-    // Free the TCP_SERVER state
-    free(state);
-
-    // Set flag
-    access_point = false;
-
-    led_off();
-}
 
 int main()
 {
@@ -893,9 +743,13 @@ int main()
         char unique_board_id[20];
         pico_get_unique_board_id_string(
             unique_board_id, 2 * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 2);
-        snprintf(wifi_ssid, SSID_LEN, "pidog_%s", unique_board_id);
 
-        boot_access_point();
+        // SSID used when hosting access point
+        char my_wifi_ssid[SSID_LEN];
+        snprintf(my_wifi_ssid, SSID_LEN, "pidog_%s", unique_board_id);
+
+        // Turn on the access point
+        boot_access_point(my_wifi_ssid);
 
     } else {
         // If all Pico-Ws boot at the same time, this delay gives the access
