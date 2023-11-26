@@ -154,7 +154,7 @@ void udp_recv_callback(void* arg, struct udp_pcb* upcb, struct pbuf* p,
     // Prevent "unused argument" compiler warning
     LWIP_UNUSED_ARG(arg);
 
-    printf("Caught something! (received a packet)\n");
+    printf("You've got mail! (received a packet)\n");
 
     if (p != NULL) {
         // Copy the payload into the recv buffer
@@ -212,7 +212,7 @@ int target_ID    = 0;
 int connect_to_network(char* ssid)
 {
     if (access_point) {
-        printf("Can't connect to a network while in AP mode.");
+        printf("ERROR: Can't connect to a network while in AP mode.\n");
         return 1;
     }
 
@@ -223,25 +223,24 @@ int connect_to_network(char* ssid)
         printf("failed to connect.\n");
         return 1;
     } else {
-        printf("connected!:\n\tSSID = %s\n\tPASS = %s\n", ssid, WIFI_PASSWORD);
-
-        // Print address assigned by DCHP
-        printf("Connected as: Pico-W IP addr: %s\n",
-               ip4addr_ntoa(netif_ip4_addr(netif_list)));
+        printf("connected!:\n");
+        printf("\tSSID = %-25s\tPASS = %s\n", ssid, WIFI_PASSWORD);
 
         // Configure target IP address
         sprintf(my_addr, STATION_ADDR);
         sprintf(dest_addr_str, "%s", AP_ADDR);
 
+        // Print address assigned by DCHP
+        printf("\tConnected as: %s - ",
+               ip4addr_ntoa(netif_ip4_addr(netif_list)));
+
         // Set local address, override the address assigned by DHCP
         ip_addr_t ip;
         ipaddr_aton(STATION_ADDR, &ip);
-
         netif_set_ipaddr(netif_default, &ip);
 
         // Print new local address
-        printf("Modified: new Pico-W IP addr: %s\n",
-               ip4addr_ntoa(netif_ip4_addr(netif_list)));
+        printf("Modified to %s\n", ip4addr_ntoa(netif_ip4_addr(netif_list)));
 
         return 0;
     }
@@ -313,10 +312,10 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             sprintf(dest_addr_str, "%s", AP_ADDR);
 
             if (target_ID == -1) {
-                printf("Giving time for the AP to boot");
+                printf("Giving time for nearby APs to boot");
                 for (int i = 0; i < 10; i++) {
                     printf(".");
-                    sleep_ms(300);
+                    sleep_ms(150);
                 }
                 printf("\n");
 
@@ -390,7 +389,6 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                     PT_SEM_SAFE_SIGNAL(pt, &new_udp_send_s);
                 }
             }
-
         } else {
             if (target_ID == 0) {
 
@@ -398,12 +396,9 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                 cyw43_arch_disable_sta_mode();
 
                 snprintf(wifi_ssid, SSID_LEN, "picow_%d", my_id);
-                printf("My wifi ssid: %s\n", wifi_ssid);
 
-                // De-initialize Wifi chip
+                // Re-initialize Wifi chip
                 cyw43_arch_deinit();
-
-                // Initialize Wifi chip
                 printf("Initializing cyw43...");
                 if (cyw43_arch_init()) {
                     printf("failed to initialise.\n");
@@ -424,7 +419,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
         if (udp_recv_callback_init()) {
             printf("receive callback failed to initialize.");
         } else {
-            printf("callback initialized!\n");
+            printf("success!\n");
         }
 
         printf("\nEnd reconnect:\n");
@@ -858,7 +853,7 @@ int main()
 
     // Print out whether you're an AP or a station
     printf("\n\n==================== %s ====================\n\n",
-           (access_point ? "NF Node" : "NF Master"));
+           (access_point ? "NF Node v2" : "NF Master v2"));
 
     // Initialize Wifi chip
     printf("Initializing cyw43...");
@@ -905,13 +900,12 @@ int main()
     if (udp_recv_callback_init()) {
         printf("receive callback failed to initialize.");
     } else {
-        printf("callback initialized!\n");
+        printf("success!\n");
     }
 
     // The threads use semaphores to signal each other when buffers are
     // written. If a thread tries to aquire a semaphore that is unavailable,
     // it yields to the next thread in the scheduler.
-    printf("Initializing send/recv semaphores...\n");
     PT_SEM_SAFE_INIT(&new_udp_send_s, 0);
     PT_SEM_SAFE_INIT(&new_udp_recv_s, 0);
     PT_SEM_SAFE_INIT(&new_udp_ack_s, 0);
@@ -921,7 +915,7 @@ int main()
     multicore_launch_core1(&core_1_main);
 
     // Start protothreads
-    printf("Starting Protothreads on Core 0!\n");
+    printf("Starting Protothreads on Core 0!\n\n");
     pt_add_thread(protothread_udp_send);
     pt_add_thread(protothread_udp_recv);
     pt_add_thread(protothread_udp_ack);
