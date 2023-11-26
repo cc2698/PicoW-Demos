@@ -6,7 +6,6 @@
 
 // Wifi password
 #define WIFI_PASSWORD "password"
-// #define WIFI_PASSWORD NULL
 
 // IP addresses
 #define AP_ADDR      "192.168.4.1"
@@ -21,6 +20,9 @@ extern char my_addr[IP_ADDR_LEN];
 
 // (Placeholder) Destination IPv4 address
 extern char dest_addr_str[IP_ADDR_LEN];
+
+// ID to which this pico is currently connected
+extern int connected_ID;
 
 // Boot up the access point, returns 0 on success.
 int boot_ap();

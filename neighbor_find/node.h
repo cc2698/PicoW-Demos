@@ -16,12 +16,15 @@
 
 // Node struct
 typedef struct node {
-    int ID;                    // ID number
-    int parent_ID;             // Parent node ID number
-    char ip_addr[IP_ADDR_LEN]; // IPv4 address
-    int ID_is_nbr[MAX_NODES];  // True if ID is a neighbor
-    char wifi_ssid[SSID_LEN];  // My SSID when hosting an access point
+    int ID;        // ID number
+    int parent_ID; // Parent node ID number
 
+    char wifi_ssid[SSID_LEN];  // My SSID when hosting an access point
+    char ip_addr[IP_ADDR_LEN]; // IPv4 address
+
+    int ID_is_nbr[MAX_NODES]; // True if ID is a neighbor
+    int is_initialized;       // Has the node been assigned an ID and found its
+                              // neighbors
 } node_t;
 
 // Neighbor struct

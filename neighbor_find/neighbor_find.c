@@ -46,9 +46,6 @@
 // Properties
 int packet_counter = 0;
 
-// SSID of the target access point
-char target_ssid[SSID_LEN];
-
 // UDP constants
 #define UDP_PORT 4444 // Same port number on both devices
 
@@ -70,6 +67,19 @@ char return_addr_str[IP_ADDR_LEN] = "255.255.255.255";
 static ip_addr_t return_addr;
 static struct udp_pcb* udp_ack_pcb;
 struct pt_sem new_udp_ack_s;
+
+/*
+ *  WIFI CONNECT / DISCONNECT
+ */
+
+// Signal protothread_connect that a new connection needs to be made
+bool signal_connect_thread = false;
+
+// ID to target during connection. Can take special values
+int target_ID = 0;
+
+// SSID of the target access point
+char target_ssid[SSID_LEN];
 
 /*
  *  LED
@@ -128,8 +138,11 @@ int64_t alarm_callback(alarm_id_t id, void* user_data)
 }
 
 /*
- *  NEIGHBORS
+ *  NODE INITIALIZATION / NEIGHBOR FINDING
  */
+
+// The ID number specified by the token
+int token_id_number;
 
 // Print list of neighbors
 void print_neighbors()
@@ -137,9 +150,13 @@ void print_neighbors()
     print_green;
     printf("\n");
     printf("NEIGHBOR SEARCH RESULTS:\n");
-    printf("My ID number:     %d\n", self.ID);
-    printf("Parent ID number: %d\n", self.parent_ID);
-    printf("My neighbors:    [");
+    printf("My ID:         %d\n", self.ID);
+    if (self.parent_ID == DEFAULT_ID) {
+        printf("Parent ID:     n/a (root node)\n");
+    } else {
+        printf("Parent ID:     %d\n", self.parent_ID);
+    }
+    printf("My neighbors:  [ ");
     for (int i = 0; i < MAX_NODES; i++) {
         if (self.ID_is_nbr[i]) {
             printf("%d ", i);
@@ -220,8 +237,8 @@ int udp_recv_callback_init(void)
                        UDP_PORT); // DHCP addr
 
         if (err == ERR_OK) {
-            // This function assigns the callback function for when a UDP packet
-            // is received
+            // This function assigns the callback function for when a UDP
+            // packet is received
             udp_recv(udp_recv_pcb, udp_recv_callback, NULL);
         } else {
             printf("UDP bind error\n");
@@ -239,16 +256,6 @@ int udp_recv_callback_init(void)
 /*
  *	THREADS
  */
-
-int connected_ID = 0;
-int target_ID    = 0;
-
-struct pt_sem connect_sem;
-int token_id_number;
-
-bool signal_connect_thread = false;
-
-bool found_neighbors = false;
 
 // =================================================
 // Connection managing thread
@@ -325,19 +332,19 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                     }
                 } else {
                     // Flag that neighbors have been recorded
-                    found_neighbors = true;
+                    self.is_initialized = true;
 
                     if (self.ID == MASTER_ID) {
                         // Master node has received token back, and has no
                         // uninitialized neighbors.
 
-                        // (Placeholder) Signal the connect thread to turn the
-                        // AP on one more time.
+                        // (Placeholder) Signal the connect thread to turn
+                        // the AP on one more time.
                         signal_connect_thread = true;
                         target_ID             = 0;
                     } else {
-                        // If node is not the master node, hand the token back
-                        // to the parent node
+                        // If node is not the master node, hand the token
+                        // back to the parent node
                         target_ID = self.parent_ID;
 
                         print_yellow;
@@ -405,7 +412,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
         }
 
         // Print list of neighbors
-        if (found_neighbors && access_point) {
+        if (self.is_initialized && access_point) {
             // Print list of neighbors
             print_neighbors();
         }

@@ -22,6 +22,8 @@ int access_point = true;
 
 char dest_addr_str[IP_ADDR_LEN] = "255.255.255.255";
 
+int connected_ID = 0;
+
 // Bruce Land's TCP server structure. Stores metadata for an access point
 // hosted by a Pico-W. This includes the IPv4 address.
 typedef struct TCP_SERVER_T_ {
