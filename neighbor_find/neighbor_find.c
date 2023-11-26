@@ -828,7 +828,7 @@ int boot_access_point()
     // printf("My IPv4 addr = %s\n", ip4addr_ntoa(&state->gw));
 
     // Print IP address (potentially better method)
-    printf("My IPv4 addr: %s\n", ip4addr_ntoa(netif_ip4_addr(netif_list)));
+    printf("\tIPv4 addr: %s\n", ip4addr_ntoa(netif_ip4_addr(netif_list)));
 
     access_point = true;
 
@@ -881,14 +881,9 @@ int main()
         cyw43_arch_enable_sta_mode();
         printf("Station mode enabled!\n");
 
-        // Perform a wifi scan
-        printf("Current target SSID = %s\n", target_ssid);
-
+        // Perform a wifi scan, copy the result to target_ssid
         scan_wifi();
-
         snprintf(target_ssid, SSID_LEN, "%s", scan_result);
-
-        printf("New target SSID = %s\n", target_ssid);
 
         // Connect to the access point
         connect_to_network(target_ssid);
