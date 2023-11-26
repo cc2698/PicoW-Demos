@@ -25,6 +25,10 @@
 // DHCP
 #include "dhcpserver/dhcpserver.h"
 
+// Local
+#include "packet.h"
+#include "wifi_scan.h"
+
 /*
  *  DEBUGGING
  */
@@ -43,8 +47,7 @@ int packet_counter = 0;
 char my_addr[20]   = "255.255.255.255";
 
 // UDP constants
-#define UDP_PORT        4444 // Same port number on both devices
-#define UDP_MSG_LEN_MAX 1400
+#define UDP_PORT 4444 // Same port number on both devices
 
 // IP addresses
 #define AP_ADDR      "192.168.4.1"
@@ -92,96 +95,11 @@ int boot_access_point();
  *  WIFI SCANNING
  */
 
-// Maximum acceptable SSID length
-#define SSID_LEN 50
-
-// SSID of the access point
-char target_ssid[SSID_LEN];
-
-// If the result of the scan is a network starting with "picow"
-static int scan_callback(void* env, const cyw43_ev_scan_result_t* result)
-{
-    if (result) {
-        char header[10] = "";
-
-        // Get first 5 characters of the SSID
-        *header = '\0';
-        snprintf(header, 6, "%s", result->ssid);
-
-        char bssid_str[40];
-        sprintf(bssid_str, "%02x:%02x:%02x:%02x:%02x:%02x", result->bssid[0],
-                result->bssid[1], result->bssid[2], result->bssid[3],
-                result->bssid[4], result->bssid[5]);
-
-        printf("ssid: %-32s rssi: %4d chan: %3d mac: %s sec: %u\n",
-               result->ssid, result->rssi, result->channel, bssid_str,
-               result->auth_mode);
-
-        if (strcmp(header, "pidog") == 0) {
-            snprintf(target_ssid, SSID_LEN, "%s", result->ssid);
-        }
-    }
-
-    return 0;
-}
-
-//
-//
-//
-//
-//
-
-#define MAX_NODES 5
-int is_nbr[MAX_NODES];
-int is_child_node[MAX_NODES];
-
-char pidog_target_ssid[SSID_LEN];
-
+// My SSID
 char wifi_ssid[SSID_LEN];
 
-// If the result of the scan is a network starting with "picow"
-static int scan_callback_2(void* env, const cyw43_ev_scan_result_t* result)
-{
-    if (result) {
-        char header[10] = "";
-
-        // Get first 5 characters of the SSID
-        // *header = '\0';
-        snprintf(header, 6, "%s", result->ssid);
-
-        bool result_is_pidog = (strcmp(header, "pidog") == 0);
-        bool result_is_picow = (strcmp(header, "picow") == 0);
-
-        if (result_is_pidog) {
-            printf("\tssid: %-32s rssi: %4d\t<-- Uninitialized node\n",
-                   result->ssid, result->rssi);
-            snprintf(target_ssid, SSID_LEN, "%s", result->ssid);
-        }
-
-        if (result_is_picow) {
-            // Separate the ID number from the SSID: picow_<ID>
-            char tbuf[UDP_MSG_LEN_MAX];
-            sprintf(tbuf, "%s", result->ssid);
-
-            char* token;
-
-            // Get the ID
-            token = strtok(tbuf, "_");
-            token = strtok(NULL, "_");
-
-            // Convert the ID to an integer
-            int id = atoi(token);
-
-            // Mark as neighbor
-            is_nbr[id] = true;
-
-            printf("\tssid: %-32s rssi: %4d\t<-- ID = %d\n", result->ssid,
-                   result->rssi, id);
-        }
-    }
-
-    return 0;
-}
+// SSID of the target access point
+char target_ssid[SSID_LEN];
 
 //
 //
@@ -189,58 +107,15 @@ static int scan_callback_2(void* env, const cyw43_ev_scan_result_t* result)
 //
 //
 
-// Initiate a wifi scan
-int find_target(int (*result_cb)(void*, const cyw43_ev_scan_result_t*))
-{
-    // Scan options don't matter
-    cyw43_wifi_scan_options_t scan_options = {0};
-
-    sprintf(target_ssid, "");
-
-    printf("Starting Wifi scan...");
-
-    // This function scans for nearby Wifi networks and runs the
-    // callback function each time a network is found.
-    int err = cyw43_wifi_scan(&cyw43_state, &scan_options, NULL, result_cb);
-
-    if (err == 0) {
-        printf("scan started successfully!\n");
-    } else {
-        printf("failed to start scan. err = %d\n", err);
-        return 1;
-    }
-
-    // sleep_ms(5000);
-
-    sleep_ms(500);
-    while (cyw43_wifi_scan_active(&cyw43_state)) {
-        // Block until scan is complete
-    }
-
-    return 0;
-}
+//
+//
+//
+//
+//
 
 /*
  *  PACKET HANDLING
  */
-
-// Packet types
-#define NUM_PACKET_TYPES 3
-const char* packet_types[NUM_PACKET_TYPES] = {"data", "ack", "token"};
-
-// Max length of header fields
-#define TOK_LEN 40
-
-// Structure that stores an outgoing packet
-typedef struct outgoing_packet {
-    char packet_type[TOK_LEN];
-    int dest_id;
-    int src_id;
-    char ip_addr[TOK_LEN];
-    int ack_num;
-    uint64_t timestamp;
-    char msg[UDP_MSG_LEN_MAX];
-} packet_t;
 
 // Mutexes
 struct mutex send_mutex, ack_mutex;
@@ -248,125 +123,6 @@ struct mutex send_mutex, ack_mutex;
 // Packet queues
 packet_t send_queue, ack_queue;
 bool ack_pending = false;
-
-packet_t compose_packet(char* type, int dest, int src, char* addr, int ack,
-                        uint64_t t, char* m)
-{
-    packet_t op;
-
-    snprintf(op.packet_type, TOK_LEN, "%s", type);
-    snprintf(op.ip_addr, TOK_LEN, "%s", addr);
-    op.dest_id   = dest;
-    op.src_id    = src;
-    op.ack_num   = ack;
-    op.timestamp = t;
-    snprintf(op.msg, UDP_MSG_LEN_MAX, "%s", m);
-
-    return op;
-}
-
-// Check if a string is a valid packet type
-int is_valid_packet_type(char* s)
-{
-    int valid = false;
-
-    // Search packet_types for a match
-    for (int i = 0; i < NUM_PACKET_TYPES; i++) {
-        if (strcmp(packet_types[i], s) == 0) {
-            valid = true;
-        }
-    }
-
-    return valid;
-}
-
-// Copy a token into a header field.
-void copy_field(char* field, char* token)
-{
-    // I use snprintf() here because it is extremely dangerous if a header field
-    // gets written without a NULL terminator, which could happen if the token
-    // exceeds the length of the buffer. The undefined behavior causes
-    // non-reproducible bugs, usually ending with the Pico-W freezing.
-
-    if (token == NULL) {
-        snprintf(field, TOK_LEN, "n/a");
-    } else {
-        snprintf(field, TOK_LEN, "%s", token);
-    }
-}
-
-// Convert a string to a packet
-packet_t string_to_packet(char* s)
-{
-    // Not strictly necessary, but the strtok() function is destructive of
-    // its inputs therefore we copy the recv buffer into a temporary
-    // variable to avoid messing with it directly.
-    char tbuf[UDP_MSG_LEN_MAX];
-    sprintf(tbuf, "%s", s);
-
-    packet_t op;
-
-    char* token;
-
-    // Data or ACK
-    token = strtok(tbuf, ";");
-    copy_field(op.packet_type, token);
-
-    // Dest ID
-    char dest_id_str[TOK_LEN];
-    token = strtok(NULL, ";");
-    copy_field(dest_id_str, token);
-    if (strcmp(dest_id_str, "n/a") != 0) {
-        op.dest_id = atoi(dest_id_str);
-    }
-
-    // Src ID
-    char src_id_str[TOK_LEN];
-    token = strtok(NULL, ";");
-    copy_field(src_id_str, token);
-    if (strcmp(src_id_str, "n/a") != 0) {
-        op.src_id = atoi(src_id_str);
-    }
-
-    // Source IP address
-    token = strtok(NULL, ";");
-    copy_field(op.ip_addr, token);
-
-    // ACK number
-    char ack_num_str[TOK_LEN];
-    token = strtok(NULL, ";");
-    copy_field(ack_num_str, token);
-    if (strcmp(ack_num_str, "n/a") != 0) {
-        op.ack_num = atoi(ack_num_str);
-    }
-
-    // Timestamp
-    char timestamp_str[TOK_LEN];
-    token = strtok(NULL, ";");
-    copy_field(timestamp_str, token);
-    if (strcmp(timestamp_str, "n/a") != 0) {
-        op.timestamp = strtoull(timestamp_str, NULL, 10);
-    }
-
-    // Contents
-    token = strtok(NULL, ";");
-    copy_field(op.msg, token);
-
-    return op;
-}
-
-void print_packet(char* payload, packet_t p)
-{
-    if (payload != NULL) {
-        printf("|\tPayload: { %s }\n", payload);
-    }
-    printf("|\ttype:    %s\n", p.packet_type);
-    printf("|\tdest_id: %d\n", p.dest_id);
-    printf("|\tsrc_id:  %d\n", p.src_id);
-    printf("|\tfrom:    %s\n", p.ip_addr);
-    printf("|\tack:     %d\n", p.ack_num);
-    printf("|\tmsg:     %s\n", p.msg);
-}
 
 /*
  *  LED
@@ -483,7 +239,7 @@ int udp_recv_callback_init(void)
 int connected_ID = 0;
 int target_ID    = 0;
 
-// Connect to a network
+// Connect to a network and set a new IP address
 int connect_to_network(char* ssid)
 {
     if (access_point) {
@@ -603,9 +359,27 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                 printf("\n");
 
                 // Scan for targets
-                find_target(scan_callback_2);
+                find_target();
 
-                if (strcmp(target_ssid, "") == 0) {
+                if (pidogs_found) {
+                    // If pidogs found
+                    if (connect_to_network(pidog_target_ssid) == 0) {
+
+                        // TODO: Mark as child node
+
+                        // Compose token to send
+                        sprintf(msg_buf, "%d", id_token_number);
+                        token_packet =
+                            new_packet("token", -1, my_id, my_addr,
+                                       packet_counter, time_us_64(), msg_buf);
+
+                        // Enqueue packet (or is this done by recv thread?)
+                        send_queue = token_packet;
+
+                        // Signal send thread
+                        PT_SEM_SAFE_SIGNAL(pt, &new_udp_send_s);
+                    }
+                } else {
                     printf("No pidogs found\n");
                     found_neighbors = true;
                     // If no pidogs (uninitialized nodes) were found, hand
@@ -616,21 +390,6 @@ static PT_THREAD(protothread_connect(struct pt* pt))
 
                     printf("\nNO UNINITIALIZED NEIGHBORS, HAND TOKEN "
                            "BACKWARDS\n\n");
-                } else if (connect_to_network(target_ssid) == 0) {
-
-                    // TODO: Mark as child node
-
-                    // Compose token to send
-                    sprintf(msg_buf, "%d", id_token_number);
-                    token_packet =
-                        compose_packet("token", -1, my_id, my_addr,
-                                       packet_counter, time_us_64(), msg_buf);
-
-                    // Enqueue packet (or is this done by recv thread?)
-                    send_queue = token_packet;
-
-                    // Signal send thread
-                    PT_SEM_SAFE_SIGNAL(pt, &new_udp_send_s);
                 }
             }
 
@@ -648,8 +407,8 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                     // Compose token to send
                     sprintf(msg_buf, "%d", id_token_number);
                     token_packet =
-                        compose_packet("token", target_ID, my_id, my_addr,
-                                       packet_counter, time_us_64(), msg_buf);
+                        new_packet("token", target_ID, my_id, my_addr,
+                                   packet_counter, time_us_64(), msg_buf);
 
                     // Enqueue packet (or is this done by recv thread?)
                     send_queue = token_packet;
@@ -879,9 +638,9 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
             // Write to the ack queue
             mutex_enter_blocking(&ack_mutex);
             printf("is token: %d\n", is_token);
-            ack_queue = compose_packet("ack", recv_buf.src_id, my_id, my_addr,
-                                       recv_buf.ack_num, recv_buf.timestamp,
-                                       recv_buf.packet_type);
+            ack_queue = new_packet("ack", recv_buf.src_id, my_id, my_addr,
+                                   recv_buf.ack_num, recv_buf.timestamp,
+                                   recv_buf.packet_type);
             mutex_exit(&ack_mutex);
 
             // Signal ACK thread
@@ -1038,8 +797,8 @@ static PT_THREAD(protothread_serial(struct pt* pt))
         printf("dest_addr: %s\n", dest_addr_str);
 
         if (strcmp(pt_serial_in_buffer, "token") == 0) {
-            send_queue = compose_packet("token", target_ID, my_id, my_addr,
-                                        packet_counter, time_us_64(), "1");
+            send_queue = new_packet("token", target_ID, my_id, my_addr,
+                                    packet_counter, time_us_64(), "1");
         } else if (strcmp(pt_serial_in_buffer, "nbr") == 0) {
             // Print list of neighbors
             printf("My neighbors (by ID): ");
@@ -1051,9 +810,9 @@ static PT_THREAD(protothread_serial(struct pt* pt))
             printf("\n");
         } else {
             mutex_enter_blocking(&send_mutex);
-            send_queue = compose_packet("data", target_ID, my_id, my_addr,
-                                        packet_counter, time_us_64(),
-                                        pt_serial_in_buffer);
+            send_queue =
+                new_packet("data", target_ID, my_id, my_addr, packet_counter,
+                           time_us_64(), pt_serial_in_buffer);
             mutex_exit(&send_mutex);
         }
 
@@ -1219,7 +978,7 @@ int main()
         // Perform a wifi scan
         printf("Current target SSID = %s\n", target_ssid);
 
-        find_target(scan_callback_2);
+        find_target();
         printf("New target SSID = %s\n", target_ssid);
 
         // Connect to the access point

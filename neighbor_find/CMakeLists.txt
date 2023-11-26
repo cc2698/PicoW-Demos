@@ -30,6 +30,8 @@ pico_enable_stdio_usb(nbr_find_master 0)
 pico_enable_stdio_uart(nbr_find_master 1)
 target_sources(nbr_find_master PRIVATE
 		neighbor_find.c
+		packet.c
+		wifi_scan.c
 		dhcpserver/dhcpserver.c
 )
 target_include_directories(nbr_find_master PRIVATE
@@ -50,6 +52,8 @@ pico_enable_stdio_usb(nbr_find 0)
 pico_enable_stdio_uart(nbr_find 1)
 target_sources(nbr_find PRIVATE
 		neighbor_find.c
+		packet.c
+		wifi_scan.c
 		dhcpserver/dhcpserver.c
 )
 target_compile_definitions(nbr_find PRIVATE AP)
