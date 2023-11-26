@@ -55,7 +55,14 @@ packet_t new_packet(char* type, int dest, int src, char* addr, int ack,
     return op;
 }
 
-packet_t string_to_packet(char* s)
+void packet_to_str(char* buf, packet_t p)
+{
+    // Copy the contents of the packet into the buffer
+    snprintf(buf, UDP_MSG_LEN_MAX, "%s;%d;%d;%s;%d;%llu;%s", p.packet_type,
+             p.dest_id, p.src_id, p.ip_addr, p.ack_num, p.timestamp, p.msg);
+}
+
+packet_t str_to_packet(char* s)
 {
     // Not strictly necessary, but the strtok() function is destructive of
     // its inputs therefore we copy the recv buffer into a temporary

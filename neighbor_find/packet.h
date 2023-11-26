@@ -27,12 +27,15 @@ bool is_valid_packet_type(char* s);
 // Copy a token into a header field.
 void copy_field(char* field, char* token);
 
+// Convert a packet to a string
+void packet_to_str(char* buf, packet_t p);
+
 // Create a new packet
 packet_t new_packet(char* type, int dest, int src, char* addr, int ack,
                     uint64_t t, char* m);
 
 // Convert a string to a packet
-packet_t string_to_packet(char* s);
+packet_t str_to_packet(char* s);
 
 void print_packet(char* payload, packet_t p);
 

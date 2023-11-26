@@ -275,6 +275,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
     while (true) {
         PT_YIELD_UNTIL(pt, signal_connect_thread && !ack_pending);
 
+        // Reset the signal flag
         signal_connect_thread = false;
 
         printf("\n\nBegin reconnect:\n");
@@ -289,13 +290,14 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             printf("Switch to station mode!\n");
             cyw43_arch_disable_ap_mode();
 
-            free(state);                      // Free the TCP_SERVER state
-            dhcp_server_deinit(&dhcp_server); // disable the dhcp server
+            // Free the TCP_SERVER state
+            free(state);
 
-            // De-initialize Wifi chip
+            // Disable the DHCP server
+            dhcp_server_deinit(&dhcp_server);
+
+            // Re-initialize Wifi chip
             cyw43_arch_deinit();
-
-            // Initialize Wifi chip
             printf("Initializing cyw43...");
             if (cyw43_arch_init()) {
                 printf("failed to initialise.\n");
@@ -306,15 +308,6 @@ static PT_THREAD(protothread_connect(struct pt* pt))
 
             cyw43_arch_enable_sta_mode();
             access_point = false;
-
-            // // Initialize UDP recv callback function
-            // udp_remove(udp_recv_pcb);
-            // printf("Initializing recv callback...");
-            // if (udp_recv_callback_init()) {
-            //     printf("receive callback failed to initialize.");
-            // } else {
-            //     printf("callback initialized!\n");
-            // }
 
             // Set dest addr to the access point
             sprintf(dest_addr_str, "%s", AP_ADDR);
@@ -421,12 +414,11 @@ static PT_THREAD(protothread_connect(struct pt* pt))
 
                 boot_access_point();
 
-                access_point = true;
                 connected_ID = 0;
             }
         }
 
-        // Initialize UDP recv callback function
+        // Re-initialize UDP recv callback function
         udp_remove(udp_recv_pcb);
         printf("Initializing recv callback...");
         if (udp_recv_callback_init()) {
@@ -500,10 +492,8 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
         // Pop the head of the queue
         send_buf = send_queue;
 
-        // Append header to the payload
-        sprintf(buffer, "%s;%d;%d;%s;%d;%llu;%s", send_buf.packet_type,
-                send_buf.dest_id, send_buf.src_id, send_buf.ip_addr,
-                send_buf.ack_num, send_buf.timestamp, send_buf.msg);
+        // Convert to string
+        packet_to_str(buffer, send_buf);
 
         // Allocate pbuf
         udp_send_length = strlen(buffer);
@@ -570,7 +560,7 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         PT_SEM_SAFE_WAIT(pt, &new_udp_recv_s);
 
         // Convert the contents of the received packet to a packet_t
-        recv_buf = string_to_packet(recv_data);
+        recv_buf = str_to_packet(recv_data);
 
         is_data = is_ack = is_token = false;
         if (strcmp(recv_buf.packet_type, "data") == 0) {
@@ -701,10 +691,8 @@ static PT_THREAD(protothread_udp_ack(struct pt* pt))
         // Pop the head of the queue
         ack_buf = ack_queue;
 
-        // Append header to the payload
-        sprintf(buffer, "%s;%d;%d;%s;%d;%llu;%s", ack_buf.packet_type,
-                ack_buf.dest_id, ack_buf.src_id, ack_buf.ip_addr,
-                ack_buf.ack_num, ack_buf.timestamp, ack_buf.msg);
+        // Convert to string
+        packet_to_str(buffer, ack_buf);
 
         // Allocate pbuf
         udp_ack_length = strlen(buffer);
@@ -801,6 +789,7 @@ void core_1_main()
  *  CORE 0 MAIN
  */
 
+// Boot up the access point, returns 0 on success.
 int boot_access_point()
 {
     // Allocate TCP server state
@@ -846,6 +835,10 @@ int boot_access_point()
 
     // Print IP address (potentially better method)
     printf("My IPv4 addr: %s\n", ip4addr_ntoa(netif_ip4_addr(netif_list)));
+
+    access_point = true;
+
+    return 0;
 }
 
 int main()
