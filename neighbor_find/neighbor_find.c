@@ -8,7 +8,6 @@
 #include "boards/pico_w.h"
 #include "pico/cyw43_arch.h"
 #include "pico/multicore.h"
-#include "pico/mutex.h"
 #include "pico/stdlib.h"
 #include "pico/unique_id.h"
 
@@ -46,6 +45,12 @@ int access_point   = true;
 int packet_counter = 0;
 char my_addr[20]   = "255.255.255.255";
 
+// SSID of the target access point
+char target_ssid[SSID_LEN];
+
+// My SSID
+char wifi_ssid[SSID_LEN];
+
 // UDP constants
 #define UDP_PORT 4444 // Same port number on both devices
 
@@ -65,12 +70,15 @@ static struct udp_pcb* udp_recv_pcb;
 struct pt_sem new_udp_recv_s;
 
 // UDP send
+packet_t send_queue;
 char dest_addr_str[20] = "255.255.255.255";
 static ip_addr_t dest_addr;
 static struct udp_pcb* udp_send_pcb;
 struct pt_sem new_udp_send_s;
 
 // UDP ack
+packet_t ack_queue;
+bool ack_pending         = false;
 char return_addr_str[20] = "255.255.255.255";
 static ip_addr_t return_addr;
 static struct udp_pcb* udp_ack_pcb;
@@ -90,39 +98,6 @@ ip4_addr_t mask;
 dhcp_server_t dhcp_server;
 
 int boot_access_point();
-
-/*
- *  WIFI SCANNING
- */
-
-// My SSID
-char wifi_ssid[SSID_LEN];
-
-// SSID of the target access point
-char target_ssid[SSID_LEN];
-
-//
-//
-//
-//
-//
-
-//
-//
-//
-//
-//
-
-/*
- *  PACKET HANDLING
- */
-
-// Mutexes
-struct mutex send_mutex, ack_mutex;
-
-// Packet queues
-packet_t send_queue, ack_queue;
-bool ack_pending = false;
 
 /*
  *  LED
@@ -359,7 +334,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                 printf("\n");
 
                 // Scan for targets
-                find_target();
+                scan_wifi();
 
                 if (pidogs_found) {
                     // If pidogs found
@@ -526,9 +501,7 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
         ipaddr_aton(dest_addr_str, &dest_addr);
 
         // Pop the head of the queue
-        mutex_enter_blocking(&send_mutex);
         send_buf = send_queue;
-        mutex_exit(&send_mutex);
 
         // Append header to the payload
         sprintf(buffer, "%s;%d;%d;%s;%d;%llu;%s", send_buf.packet_type,
@@ -636,12 +609,10 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
             strcpy(return_addr_str, recv_buf.ip_addr);
 
             // Write to the ack queue
-            mutex_enter_blocking(&ack_mutex);
             printf("is token: %d\n", is_token);
             ack_queue = new_packet("ack", recv_buf.src_id, my_id, my_addr,
                                    recv_buf.ack_num, recv_buf.timestamp,
                                    recv_buf.packet_type);
-            mutex_exit(&ack_mutex);
 
             // Signal ACK thread
             PT_SEM_SAFE_SIGNAL(pt, &new_udp_ack_s);
@@ -731,9 +702,7 @@ static PT_THREAD(protothread_udp_ack(struct pt* pt))
         ipaddr_aton(return_addr_str, &return_addr);
 
         // Pop the head of the queue
-        mutex_enter_blocking(&ack_mutex);
         ack_buf = ack_queue;
-        mutex_exit(&ack_mutex);
 
         // Append header to the payload
         sprintf(buffer, "%s;%d;%d;%s;%d;%llu;%s", ack_buf.packet_type,
@@ -809,11 +778,9 @@ static PT_THREAD(protothread_serial(struct pt* pt))
             }
             printf("\n");
         } else {
-            mutex_enter_blocking(&send_mutex);
             send_queue =
                 new_packet("data", target_ID, my_id, my_addr, packet_counter,
                            time_us_64(), pt_serial_in_buffer);
-            mutex_exit(&send_mutex);
         }
 
         // Signal waiting threads
@@ -978,7 +945,7 @@ int main()
         // Perform a wifi scan
         printf("Current target SSID = %s\n", target_ssid);
 
-        find_target();
+        scan_wifi();
         printf("New target SSID = %s\n", target_ssid);
 
         // Connect to the access point
@@ -992,10 +959,6 @@ int main()
     } else {
         printf("callback initialized!\n");
     }
-
-    // Initialize mutexes
-    mutex_init(&send_mutex);
-    mutex_init(&ack_mutex);
 
     // The threads use semaphores to signal each other when buffers are
     // written. If a thread tries to aquire a semaphore that is unavailable,
