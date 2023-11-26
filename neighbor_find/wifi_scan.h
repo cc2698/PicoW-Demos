@@ -16,7 +16,7 @@ extern char pidog_target_ssid[SSID_LEN];
 // (Placeholder) track neighbors by ID
 extern int is_nbr[MAX_NODES];
 
-// Initiate a wifi scan
+// Scan for picow_<ID> and pidog_<hex ID> networks, returns 0 on success.
 int scan_wifi();
 
 #endif
