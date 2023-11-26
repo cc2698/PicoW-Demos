@@ -136,7 +136,7 @@ int scan_wifi()
     };
 
     printf("\t%*c...\n", 4, ' ');
-    printf("\tScan result: %-25s\n", scan_result);
+    printf("\tscan result: %-25s\n", scan_result);
 
     return 0;
 }

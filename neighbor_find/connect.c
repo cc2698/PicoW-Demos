@@ -142,16 +142,16 @@ int connect_to_network(char* ssid)
         printf("failed to connect.\n");
         return 1;
     } else {
-        printf("connected!:\n");
-        printf("\tSSID = %-25s\n", ssid);
-        printf("\tPASS = %s\n", WIFI_PASSWORD);
+        printf("connected!\n");
+        printf("\tnetwork  = %-25s\n", ssid);
+        printf("\tpassword = %s\n", WIFI_PASSWORD);
 
         // Configure target IP address
         sprintf(my_addr, STATION_ADDR);
         sprintf(dest_addr_str, "%s", AP_ADDR);
 
         // Print address assigned by DHCP
-        printf("\tOverride DHCP. My IPv4 addr: %s --> ",
+        printf("\tSet IPv4 addr: %s (DHCP) --> ",
                ip4addr_ntoa(netif_ip4_addr(netif_list)));
 
         // Set local address, override the address assigned by DHCP
@@ -160,7 +160,7 @@ int connect_to_network(char* ssid)
         netif_set_ipaddr(netif_default, &ip);
 
         // Print new local address
-        printf("%s\n", ip4addr_ntoa(netif_ip4_addr(netif_list)));
+        printf("%s (new)\n", ip4addr_ntoa(netif_ip4_addr(netif_list)));
 
         return 0;
     }

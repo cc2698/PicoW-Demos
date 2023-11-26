@@ -100,6 +100,8 @@ volatile int led_state = LOW;
  *  PRINTF COLORS
  */
 
+#define print_bold   printf("\x1b[1m")
+#define print_italic printf("\x1b[3m")
 #define print_green  printf("\x1b[32m")
 #define print_yellow printf("\x1b[33m")
 #define print_cyan   printf("\x1b[36m")
@@ -541,6 +543,7 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         }
 #else
         // Print formatted packet contents
+        print_italic;
         print_cyan;
         printf("| Incoming...\n");
         print_packet(recv_data, recv_buf);
@@ -750,6 +753,8 @@ int main()
     // Initialize all stdio types
     stdio_init_all();
 
+    print_bold;
+
 // If this pico is hosting an AP, set access_point to true. The macro is defined
 // at compile-time by CMake allowing for the same file to be compiled into two
 // separate binaries, one for the access point and one for the station.
@@ -823,6 +828,9 @@ int main()
 
     // Start protothreads
     printf("Starting Protothreads on Core 0!\n\n");
+
+    print_reset;
+
     pt_add_thread(protothread_udp_send);
     pt_add_thread(protothread_udp_recv);
     pt_add_thread(protothread_udp_ack);
