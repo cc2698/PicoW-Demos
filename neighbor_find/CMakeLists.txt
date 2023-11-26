@@ -24,7 +24,7 @@ pico_sdk_init()
 
 #######
 
-# Access point
+# Master
 add_executable(nbr_find_master)
 pico_enable_stdio_usb(nbr_find_master 0)
 pico_enable_stdio_uart(nbr_find_master 1)
@@ -46,7 +46,7 @@ target_link_libraries(nbr_find_master PRIVATE
 )
 pico_add_extra_outputs(nbr_find_master) # Generate UF2 output
 
-# Station
+# Node
 add_executable(nbr_find)
 pico_enable_stdio_usb(nbr_find 0)
 pico_enable_stdio_uart(nbr_find 1)
