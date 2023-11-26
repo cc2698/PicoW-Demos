@@ -96,7 +96,11 @@ TCP_SERVER_T* state;
 ip4_addr_t mask;
 dhcp_server_t dhcp_server;
 
+// Boot up the access point, returns 0 on success.
 int boot_access_point();
+
+// Shutdown the access point, DHCP, and free the TCP_SERVER state
+void shutdown_ap();
 
 /*
  *  LED
@@ -277,23 +281,26 @@ static PT_THREAD(protothread_connect(struct pt* pt))
         // Reset the signal flag
         signal_connect_thread = false;
 
-        printf("\n\nBegin reconnect:\n");
-        printf("access_point = %d\n", access_point);
-        printf("My ID number = %d\n", my_id);
-        printf("My wifi name = %s\n", wifi_ssid);
-        printf("connected_id = %d; target_id = %d; ack_pending = %d\n",
-               connected_ID, target_ID, ack_pending);
+        // printf("\n\nBegin reconnect:\n");
+        // printf("access_point = %d\n", access_point);
+        // printf("My ID number = %d\n", my_id);
+        // printf("My wifi name = %s\n", wifi_ssid);
+        // printf("connected_id = %d; target_id = %d; ack_pending = %d\n",
+        //        connected_ID, target_ID, ack_pending);
 
         if (access_point) {
             // Switch to station mode
             printf("Switch to station mode!\n");
-            cyw43_arch_disable_ap_mode();
 
-            // Free the TCP_SERVER state
-            free(state);
+            // cyw43_arch_disable_ap_mode();
 
-            // Disable the DHCP server
-            dhcp_server_deinit(&dhcp_server);
+            // // Free the TCP_SERVER state
+            // free(state);
+
+            // // Disable the DHCP server
+            // dhcp_server_deinit(&dhcp_server);
+
+            shutdown_ap();
 
             // Re-initialize Wifi chip
             cyw43_arch_deinit();
@@ -421,12 +428,12 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             printf("success!\n");
         }
 
-        printf("\nEnd reconnect:\n");
-        printf("access_point = %d\n", access_point);
-        printf("My ID number = %d\n", my_id);
-        printf("My wifi name = %s\n", wifi_ssid);
-        printf("connected_id = %d; target_id = %d; ack_pending = %d\n\n\n",
-               connected_ID, target_ID, ack_pending);
+        // printf("\nEnd reconnect:\n");
+        // printf("access_point = %d\n", access_point);
+        // printf("My ID number = %d\n", my_id);
+        // printf("My wifi name = %s\n", wifi_ssid);
+        // printf("connected_id = %d; target_id = %d; ack_pending = %d\n\n\n",
+        //        connected_ID, target_ID, ack_pending);
 
         // Print list of neighbors
         if (found_neighbors && access_point) {
@@ -783,7 +790,6 @@ void core_1_main()
  *  CORE 0 MAIN
  */
 
-// Boot up the access point, returns 0 on success.
 int boot_access_point()
 {
     // Allocate TCP server state
@@ -811,9 +817,8 @@ int boot_access_point()
     sprintf(my_addr, AP_ADDR);
     sprintf(dest_addr_str, "%s", STATION_ADDR);
 
-    // Start the Dynamic Host Configuration Protocol (DHCP) server. Even
-    // though in the program DHCP is not required, LwIP seems to need
-    // it!
+    // Start the Dynamic Host Configuration Protocol (DHCP) server. Even though
+    // in the program DHCP is not required, LwIP seems to need it!
     //      - Bruce Land
     //
     // I believe that DHCP is what assigns the Pico-W client an initial
@@ -830,9 +835,29 @@ int boot_access_point()
     // Print IP address (potentially better method)
     printf("\tIPv4 addr: %s\n", ip4addr_ntoa(netif_ip4_addr(netif_list)));
 
+    // Set flag
     access_point = true;
 
+    led_on();
+
     return 0;
+}
+
+void shutdown_ap()
+{
+    // Disable AP mode
+    cyw43_arch_disable_ap_mode();
+
+    // Disable the DHCP server
+    dhcp_server_deinit(&dhcp_server);
+
+    // Free the TCP_SERVER state
+    free(state);
+
+    // Set flag
+    access_point = false;
+
+    led_off();
 }
 
 int main()
