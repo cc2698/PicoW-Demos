@@ -22,8 +22,14 @@ extern char dest_addr_str[20];
 // Boot up the access point, returns 0 on success.
 int boot_ap();
 
-// Shutdown the access point, DHCP, and free the TCP_SERVER state
+// Shutdown the access point, de-init DHCP, and free the TCP_SERVER state
 void shutdown_ap();
+
+// Boot up the station
+void boot_station();
+
+// Shutdown the station
+void shutdown_station();
 
 // Connect to a network and set a new IP address
 int connect_to_network(char* ssid);

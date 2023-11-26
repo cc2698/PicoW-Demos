@@ -50,7 +50,7 @@ int boot_ap(char* ssid)
         printf("allocated!\n");
     }
 
-    // Turn on access point
+    // Enable access point
     cyw43_arch_enable_ap_mode(ssid, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK);
     printf("Access point mode enabled!\n");
     printf("\tSSID = %s\n", ssid);
@@ -82,7 +82,6 @@ int boot_ap(char* ssid)
     // Print IP address (potentially better method)
     printf("\tIPv4 addr: %s\n", ip4addr_ntoa(netif_ip4_addr(netif_list)));
 
-    // Set flag
     access_point = true;
 
     return 0;
@@ -90,7 +89,9 @@ int boot_ap(char* ssid)
 
 void shutdown_ap()
 {
-    // Disable AP mode
+    printf("Shutting down access point...");
+
+    // Disable access point
     cyw43_arch_disable_ap_mode();
 
     // Disable the DHCP server
@@ -99,8 +100,32 @@ void shutdown_ap()
     // Free the TCP_SERVER state
     free(state);
 
-    // Set flag
     access_point = false;
+
+    printf("success!\n");
+}
+
+// Boot up the station
+void boot_station()
+{
+    printf("Booting station mode...");
+
+    // Enable station
+    cyw43_arch_enable_sta_mode();
+    access_point = false;
+
+    printf("success!\n");
+}
+
+// Shutdown the station
+void shutdown_station()
+{
+    printf("Shutting down station...");
+
+    // Disable station
+    cyw43_arch_disable_sta_mode();
+
+    printf("success!\n");
 }
 
 int connect_to_network(char* ssid)

@@ -211,11 +211,9 @@ int connected_ID = 0;
 int target_ID    = 0;
 
 struct pt_sem connect_sem;
-int id_token_number;
+int token_id_number;
 
 int parent_ID;
-
-int send_queue_id;
 
 bool signal_connect_thread = false;
 
@@ -235,13 +233,18 @@ static PT_THREAD(protothread_connect(struct pt* pt))
     static char msg_buf[TOK_LEN];
 
     // SSID used when hosting access point
-    char my_wifi_ssid[SSID_LEN];
+    static char my_wifi_ssid[SSID_LEN];
+
+    static int connect_err;
 
     while (true) {
         PT_YIELD_UNTIL(pt, signal_connect_thread && !ack_pending);
 
         // Reset the signal flag
         signal_connect_thread = false;
+
+        // Reset error code
+        connect_err = 0;
 
         if (access_point) {
             // Switch to station mode
@@ -260,8 +263,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                 printf("initialized!\n");
             }
 
-            cyw43_arch_enable_sta_mode();
-            access_point = false;
+            boot_station();
 
             // Set dest addr to the access point
             sprintf(dest_addr_str, "%s", AP_ADDR);
@@ -281,12 +283,15 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                     // If pidogs found, copy the result into target_ssid
                     snprintf(target_ssid, SSID_LEN, "%s", scan_result);
 
-                    if (connect_to_network(target_ssid) == 0) {
+                    // Try to connect to wifi
+                    connect_err = connect_to_network(target_ssid);
+
+                    if (connect_err == 0) {
 
                         // TODO: Mark as child node
 
                         // Compose token to send
-                        sprintf(msg_buf, "%d", id_token_number);
+                        sprintf(msg_buf, "%d", token_id_number);
                         token_packet =
                             new_packet("token", -1, my_id, my_addr,
                                        packet_counter, time_us_64(), msg_buf);
@@ -326,14 +331,17 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                 // Connect to someone else's network
                 snprintf(target_ssid, SSID_LEN, "picow_%d", target_ID);
 
-                if (connect_to_network(target_ssid) == 0) {
+                // Try to connect to wifi
+                connect_err = connect_to_network(target_ssid);
+
+                if (connect_err == 0) {
                     // If successful, change the connected_id number
                     connected_ID = target_ID;
 
                     // printf("connected id: %d\n", connected_ID);
 
                     // Compose token to send
-                    sprintf(msg_buf, "%d", id_token_number);
+                    sprintf(msg_buf, "%d", token_id_number);
                     token_packet =
                         new_packet("token", target_ID, my_id, my_addr,
                                    packet_counter, time_us_64(), msg_buf);
@@ -347,11 +355,8 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             }
         } else {
             if (target_ID == 0) {
-
-                printf("Switch to AP mode!\n");
-                cyw43_arch_disable_sta_mode();
-
-                snprintf(my_wifi_ssid, SSID_LEN, "picow_%d", my_id);
+                // Disable station
+                shutdown_station();
 
                 // Re-initialize Wifi chip
                 cyw43_arch_deinit();
@@ -364,6 +369,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                 }
 
                 // Turn on the access point
+                snprintf(my_wifi_ssid, SSID_LEN, "picow_%d", my_id);
                 boot_ap(my_wifi_ssid);
 
                 connected_ID = 0;
@@ -553,7 +559,7 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
             printf("Received the token\n");
 
             // Convert the token number into an integer
-            id_token_number = atoi(recv_buf.msg);
+            token_id_number = atoi(recv_buf.msg);
 
             // If I don't have an ID yet, give myself one
             if (my_id == 0) {
@@ -567,7 +573,7 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
                 printf("\tMy ID:     %3d --> ", my_id);
 
                 // Increment the token number, use that as my ID
-                my_id = ++id_token_number;
+                my_id = ++token_id_number;
 
                 printf("%3d\n", my_id);
             }
@@ -764,8 +770,7 @@ int main()
         sleep_ms(1000);
 
         // Enable station mode
-        cyw43_arch_enable_sta_mode();
-        printf("Station mode enabled!\n");
+        boot_station();
 
         // Perform a wifi scan, copy the result to target_ssid
         scan_wifi();
