@@ -26,6 +26,7 @@
 
 // Local
 #include "packet.h"
+#include "utils.h"
 #include "wifi_scan.h"
 
 /*
@@ -100,42 +101,12 @@ dhcp_server_t dhcp_server;
 int boot_access_point();
 
 /*
- *  LED
- */
-
-#define HIGH 1
-#define LOW  0
-
-volatile int led_state = LOW;
-
-#define led_on()                                                               \
-    do {                                                                       \
-        led_state = HIGH;                                                      \
-        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_state);                 \
-    } while (0);
-
-#define led_off()                                                              \
-    do {                                                                       \
-        led_state = LOW;                                                       \
-        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_state);                 \
-    } while (0);
-
-#define led_toggle()                                                           \
-    do {                                                                       \
-        led_state = !led_state;                                                \
-        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_state);                 \
-    } while (0);
-
-/*
  *  ALARM
  */
 
 // Alarm ID and duration
 alarm_id_t led_alarm;
 #define ALARM_MS 750
-
-// Signal core 1 to turn the LED on
-volatile int led_flag = false;
 
 // Alarm callback function
 int64_t alarm_callback(alarm_id_t id, void* user_data)
@@ -943,10 +914,11 @@ int main()
         printf("Station mode enabled!\n");
 
         // Perform a wifi scan
-        printf("Current target SSID = %s\n", target_ssid);
+        printf("Current pidog_target_ssid = {%s}\n", target_ssid);
 
         scan_wifi();
-        printf("New target SSID = %s\n", target_ssid);
+
+        printf("New pidog_target_ssid = {%s}\n", target_ssid);
 
         // Connect to the access point
         connect_to_network(target_ssid);
