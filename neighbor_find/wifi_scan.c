@@ -135,6 +135,7 @@ int scan_wifi()
         pidogs_found = true;
     };
 
+    printf("\t\t...\n");
     printf("\tScan result: %-25s\n", scan_result);
 
     return 0;

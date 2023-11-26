@@ -126,10 +126,10 @@ void print_packet(char* payload, packet_t p)
     if (payload != NULL) {
         printf("|\tPayload: { %s }\n", payload);
     }
-    printf("|\ttype:    %s\n", p.packet_type);
-    printf("|\tdest ID: %d\n", p.dest_id);
-    printf("|\tsrc ID:  %d\n", p.src_id);
-    printf("|\tsrc IP:  %s\n", p.ip_addr);
-    printf("|\tack #:   %d\n", p.ack_num);
-    printf("|\tmsg:     %s\n", p.msg);
+    printf("|\ttype:      %s\n", p.packet_type);
+    printf("|\tdst ID:    %d\n", p.dest_id);
+    printf("|\tsrc ID:    %d\n", p.src_id);
+    printf("|\tsrc IP:    %s\n", p.ip_addr);
+    printf("|\tack #:     %d\n", p.ack_num);
+    printf("|\tmsg:       %s\n", p.msg);
 }
