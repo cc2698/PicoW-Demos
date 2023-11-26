@@ -296,7 +296,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             // Set dest addr to the access point
             sprintf(dest_addr_str, "%s", AP_ADDR);
 
-            if (target_ID == -1) {
+            if (target_ID == RUN_SCAN) {
                 printf("Waiting for nearby APs to boot:\n\t");
                 progress_bar_blocking(2000, 30);
 
@@ -311,7 +311,6 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                     connect_err = connect_to_network(target_ssid);
 
                     if (connect_err == 0) {
-
                         // TODO: Mark as child node
 
                         // Compose token to send
@@ -334,14 +333,14 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                         // Master node has received token back, and has no
                         // uninitialized neighbors.
 
+                        // (Placeholder) Signal the connect thread to turn the
+                        // AP on one more time.
                         signal_connect_thread = true;
                         target_ID             = 0;
                     } else {
                         // If no pidogs (uninitialized nodes) were found, hand
                         // the token back to the parent node
-                        printf("Changing target ID: %d --> ", target_ID);
                         target_ID = parent_ID;
-                        printf("%d\n", target_ID);
 
                         print_yellow;
                         printf("\nNO UNINITIALIZED NEIGHBORS, SEND TOKEN "
@@ -362,8 +361,6 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                     // If successful, change the connected_id number
                     connected_ID = target_ID;
 
-                    // printf("connected id: %d\n", connected_ID);
-
                     // Compose token to send
                     sprintf(msg_buf, "%d", token_id_number);
                     token_packet =
@@ -378,7 +375,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                 }
             }
         } else {
-            if (target_ID == 0) {
+            if (target_ID == ENABLE_AP) {
                 // Disable station
                 shutdown_station();
 

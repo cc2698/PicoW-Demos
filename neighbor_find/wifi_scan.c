@@ -18,6 +18,7 @@ char scan_result[SSID_LEN];
 
 int is_nbr[MAX_NODES];
 
+// Track unique SSIDs during a scan
 int num_unique_results = 0;
 uint64_t unique_results[MAX_NODES];
 
