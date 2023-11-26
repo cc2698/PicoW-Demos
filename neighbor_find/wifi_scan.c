@@ -108,14 +108,14 @@ int scan_wifi()
         unique_results[i] = 0;
     }
 
-    printf("Starting Wifi scan...");
+    printf("Starting scan...");
 
     // This function scans for nearby Wifi networks and runs the
     // callback function each time a network is found.
     int err = cyw43_wifi_scan(&cyw43_state, &scan_options, NULL, scan_callback);
 
     if (err == 0) {
-        printf("scan started successfully!\n");
+        printf("success!\n");
     } else {
         printf("failed to start scan. err = %d\n", err);
         return 1;

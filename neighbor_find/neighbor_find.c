@@ -312,10 +312,10 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             sprintf(dest_addr_str, "%s", AP_ADDR);
 
             if (target_ID == -1) {
-                printf("Giving time for nearby APs to boot");
-                for (int i = 0; i < 10; i++) {
+                printf("Waiting for nearby APs to boot");
+                for (int i = 0; i < 30; i++) {
                     printf(".");
-                    sleep_ms(150);
+                    sleep_ms(75);
                 }
                 printf("\n");
 
@@ -373,8 +373,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                     // If successful, change the connected_id number
                     connected_ID = target_ID;
 
-                    printf("connected id: %d\n", connected_ID);
-                    printf("dest_addr: %s\n", dest_addr_str);
+                    // printf("connected id: %d\n", connected_ID);
 
                     // Compose token to send
                     sprintf(msg_buf, "%d", id_token_number);
@@ -508,7 +507,7 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
 #endif
 
         // Print new local address
-        printf("What i think is the dest addr: %s\n", ip4addr_ntoa(&dest_addr));
+        printf("Destination IPv4 addr: %s\n", ip4addr_ntoa(&dest_addr));
 
         // Send packet
         // cyw43_arch_lwip_begin();
@@ -563,12 +562,8 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         } else if (strcmp(recv_buf.packet_type, "ack") == 0) {
             is_ack = true;
         } else if (strcmp(recv_buf.packet_type, "token") == 0) {
-            printf("is a token\n");
             is_token = true;
         }
-
-        printf("Recv type: data = %d, ack = %d, token = %d\n", is_data, is_ack,
-               is_token);
 
 #ifndef PRINT_ON_RECV
         if (strcmp(recv_buf.packet_type, "ack") == 0) {
@@ -578,9 +573,9 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         // Print formatted packet contents
         printf("| Incoming...\n");
         print_packet(recv_data, recv_buf);
-        if (strcmp(recv_buf.packet_type, "ack") == 0) {
+        if (is_ack) {
             rtt_ms = (time_us_64() - recv_buf.timestamp) / 1000.0f;
-            printf("|\tRTT:     %.2f ms\n", rtt_ms);
+            printf("|\tRTT: %.2f ms\n", rtt_ms);
         }
         printf("\n");
 #endif
@@ -591,7 +586,6 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
             strcpy(return_addr_str, recv_buf.ip_addr);
 
             // Write to the ack queue
-            printf("is token: %d\n", is_token);
             ack_queue = new_packet("ack", recv_buf.src_id, my_id, my_addr,
                                    recv_buf.ack_num, recv_buf.timestamp,
                                    recv_buf.packet_type);
@@ -604,38 +598,35 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         // Determine if ack'ing token
         if (is_ack) {
             if (strcmp(recv_buf.msg, "token") == 0) {
-                printf("token ack'ed\n");
+                printf("Token has been ack'ed\n");
                 // Signal connect thread to re-enable AP mode
                 target_ID             = 0;
                 signal_connect_thread = true;
-
-                printf("connected_id = %d; target_id = %d; ack_pending = %d\n",
-                       connected_ID, target_ID, ack_pending);
             }
         }
 
         // Assign ID number
         if (is_token) {
-            printf("is a token\n");
+            printf("Received the token\n");
 
             // Convert the token number into an integer
             id_token_number = atoi(recv_buf.msg);
 
             // If I don't have an ID yet, give myself one
             if (my_id == 0) {
-                printf("Parent ID before = %d\n", parent_ID);
-                printf("My ID before = %d\n", my_id);
+                printf("Assigning myself an ID number:\n");
+                printf("\tParent ID: %3d --> ", parent_ID);
 
-                // Parent is whoever gave you the token
+                // Parent node is whoever gave you the token
                 parent_ID = recv_buf.src_id;
-                // Increment the token number
+
+                printf("%3d\n", parent_ID);
+                printf("\tMy ID:     %3d --> ", my_id);
+
+                // Increment the token number, use that as my ID
                 my_id = ++id_token_number;
 
-                printf("Parent ID after = %d\n", parent_ID);
-                printf("My ID after = %d\n", my_id);
-
-                printf("connected_id = %d; target_id = %d; ack_pending = %d\n",
-                       connected_ID, target_ID, ack_pending);
+                printf("%3d\n", my_id);
             }
 
             // Signal connect thread to scan for neighbors
@@ -743,28 +734,36 @@ static PT_THREAD(protothread_serial(struct pt* pt))
         // Spawn thread for non-blocking read
         serial_read;
 
-        printf("dest_addr: %s\n", dest_addr_str);
-
         if (strcmp(pt_serial_in_buffer, "token") == 0) {
+            // Load the token into the send queue
             send_queue = new_packet("token", target_ID, my_id, my_addr,
                                     packet_counter, time_us_64(), "1");
+
+            // Signal waiting threads
+            PT_SEM_SAFE_SIGNAL(pt, &new_udp_send_s);
+
         } else if (strcmp(pt_serial_in_buffer, "nbr") == 0) {
             // Print list of neighbors
-            printf("My neighbors (by ID): ");
+            printf("\x1b[32m");
+            printf("NEIGHBOR SEARCH RESULTS:\n");
+            printf("My ID number: %d\n", my_id);
+            printf("My neighbors: ");
             for (int i = 0; i < MAX_NODES; i++) {
                 if (is_nbr[i]) {
                     printf("%d ", i);
                 }
             }
             printf("\n");
+            printf("\x1b[0m");
+
         } else {
             send_queue =
                 new_packet("data", target_ID, my_id, my_addr, packet_counter,
                            time_us_64(), pt_serial_in_buffer);
-        }
 
-        // Signal waiting threads
-        PT_SEM_SAFE_SIGNAL(pt, &new_udp_send_s);
+            // Signal waiting threads
+            PT_SEM_SAFE_SIGNAL(pt, &new_udp_send_s);
+        }
     }
 
     PT_END(pt);

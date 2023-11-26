@@ -127,9 +127,9 @@ void print_packet(char* payload, packet_t p)
         printf("|\tPayload: { %s }\n", payload);
     }
     printf("|\ttype:    %s\n", p.packet_type);
-    printf("|\tdest_id: %d\n", p.dest_id);
-    printf("|\tsrc_id:  %d\n", p.src_id);
-    printf("|\tfrom:    %s\n", p.ip_addr);
-    printf("|\tack:     %d\n", p.ack_num);
+    printf("|\tdest ID: %d\n", p.dest_id);
+    printf("|\tsrc ID:  %d\n", p.src_id);
+    printf("|\tsrc IP:  %s\n", p.ip_addr);
+    printf("|\tack #:   %d\n", p.ack_num);
     printf("|\tmsg:     %s\n", p.msg);
 }
