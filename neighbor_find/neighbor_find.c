@@ -353,14 +353,23 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                 } else {
                     printf("No pidogs found\n");
                     found_neighbors = true;
-                    // If no pidogs (uninitialized nodes) were found, hand
-                    // the token back to the parent node
-                    printf("Changing target ID: %d --> ", target_ID);
-                    target_ID = parent_ID;
-                    printf("%d\n", target_ID);
 
-                    printf("\nNO UNINITIALIZED NEIGHBORS, HAND TOKEN "
-                           "BACKWARDS\n\n");
+                    if (my_id == 1) {
+                        // Master node has received token back, and has no
+                        // uninitialized neighbors.
+
+                        signal_connect_thread = true;
+                        target_ID             = 0;
+                    } else {
+                        // If no pidogs (uninitialized nodes) were found, hand
+                        // the token back to the parent node
+                        printf("Changing target ID: %d --> ", target_ID);
+                        target_ID = parent_ID;
+                        printf("%d\n", target_ID);
+
+                        printf("\nNO UNINITIALIZED NEIGHBORS, HAND TOKEN "
+                               "BACKWARDS\n\n");
+                    }
                 }
             }
 
