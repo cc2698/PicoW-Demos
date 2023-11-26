@@ -38,7 +38,7 @@ char my_addr[20]   = "255.255.255.255";
 #define MASK_ADDR "255.255.255.0"
 
 // Wifi name and password
-#define WIFI_SSID     "picow_always_on"
+#define WIFI_SSID     "picow_test"
 #define WIFI_PASSWORD "password"
 
 // Startup time
@@ -135,8 +135,11 @@ int main()
     dhcp_server_t dhcp_server;
     dhcp_server_init(&dhcp_server, &state->gw, &mask);
 
-    // Print IP address
-    printf("My IPv4 addr = %s\n", ip4addr_ntoa(&state->gw));
+    // // Print IP address (old method)
+    // printf("My IPv4 addr = %s\n", ip4addr_ntoa(&state->gw));
+
+    // Print IP address (potentially better method)
+    printf("My IPv4 addr: %s\n", ip4addr_ntoa(netif_ip4_addr(netif_list)));
 
     struct repeating_timer timer;
     add_repeating_timer_ms(-750, repeating_timer_callback, NULL, &timer);

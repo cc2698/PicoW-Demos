@@ -8,7 +8,7 @@
 #include "pico/stdlib.h"
 
 // Wifi name and password
-#define WIFI_SSID     "picow_1"
+#define WIFI_SSID     "picow_test"
 #define WIFI_PASSWORD "password"
 
 int main()
