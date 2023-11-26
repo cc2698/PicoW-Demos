@@ -17,10 +17,9 @@
 
 // Local
 #include "connect.h"
+#include "node.h"
 
 int access_point = true;
-
-char my_addr[20] = "255.255.255.255";
 
 char dest_addr_str[20] = "255.255.255.255";
 
@@ -61,7 +60,7 @@ int boot_ap(char* ssid)
     ipaddr_aton(MASK_ADDR, ip_2_ip4(&mask));
 
     // Configure target IP address
-    sprintf(my_addr, AP_ADDR);
+    sprintf(self.ip_addr, AP_ADDR);
     sprintf(dest_addr_str, "%s", STATION_ADDR);
 
     // Start the Dynamic Host Configuration Protocol (DHCP) server. Even though
@@ -147,7 +146,7 @@ int connect_to_network(char* ssid)
         printf("\tpassword = %s\n", WIFI_PASSWORD);
 
         // Configure target IP address
-        sprintf(my_addr, STATION_ADDR);
+        sprintf(self.ip_addr, STATION_ADDR);
         sprintf(dest_addr_str, "%s", AP_ADDR);
 
         // Print address assigned by DHCP

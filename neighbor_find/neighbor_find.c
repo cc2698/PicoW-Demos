@@ -1,5 +1,7 @@
 
 // C libraries
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,6 +28,7 @@
 
 // Local
 #include "connect.h"
+#include "node.h"
 #include "packet.h"
 #include "wifi_scan.h"
 
@@ -129,14 +132,12 @@ int64_t alarm_callback(alarm_id_t id, void* user_data)
  *  NEIGHBORS
  */
 
-int my_id = 0;
-
 void print_neighbors()
 {
     printf("\n");
     print_green;
     printf("NEIGHBOR SEARCH RESULTS:\n");
-    printf("My ID number: %d\n", my_id);
+    printf("My ID number: %d\n", self.ID);
     printf("My neighbors: ");
     for (int i = 0; i < MAX_NODES; i++) {
         if (is_nbr[i]) {
@@ -244,8 +245,6 @@ int target_ID    = 0;
 struct pt_sem connect_sem;
 int token_id_number;
 
-int parent_ID;
-
 bool signal_connect_thread = false;
 
 bool found_neighbors = false;
@@ -291,6 +290,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                 printf("initialized!\n");
             }
 
+            // Enable station
             boot_station();
 
             // Set dest addr to the access point
@@ -316,7 +316,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                         // Compose token to send
                         sprintf(msg_buf, "%d", token_id_number);
                         token_packet =
-                            new_packet("token", -1, my_id, my_addr,
+                            new_packet("token", -1, self.ID, self.ip_addr,
                                        packet_counter, time_us_64(), msg_buf);
 
                         // Enqueue packet (or is this done by recv thread?)
@@ -329,7 +329,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                     // Flag that neighbors have been recorded
                     found_neighbors = true;
 
-                    if (my_id == 1) {
+                    if (self.ID == 1) {
                         // Master node has received token back, and has no
                         // uninitialized neighbors.
 
@@ -340,7 +340,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                     } else {
                         // If no pidogs (uninitialized nodes) were found, hand
                         // the token back to the parent node
-                        target_ID = parent_ID;
+                        target_ID = self.parent_ID;
 
                         print_yellow;
                         printf("\nNO UNINITIALIZED NEIGHBORS, SEND TOKEN "
@@ -364,7 +364,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                     // Compose token to send
                     sprintf(msg_buf, "%d", token_id_number);
                     token_packet =
-                        new_packet("token", target_ID, my_id, my_addr,
+                        new_packet("token", target_ID, self.ID, self.ip_addr,
                                    packet_counter, time_us_64(), msg_buf);
 
                     // Enqueue packet (or is this done by recv thread?)
@@ -390,7 +390,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                 }
 
                 // Turn on the access point
-                snprintf(my_wifi_ssid, SSID_LEN, "picow_%d", my_id);
+                snprintf(my_wifi_ssid, SSID_LEN, "picow_%d", self.ID);
                 boot_ap(my_wifi_ssid);
 
                 connected_ID = 0;
@@ -557,9 +557,9 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
             strcpy(return_addr_str, recv_buf.ip_addr);
 
             // Write to the ack queue
-            ack_queue = new_packet("ack", recv_buf.src_id, my_id, my_addr,
-                                   recv_buf.ack_num, recv_buf.timestamp,
-                                   recv_buf.packet_type);
+            ack_queue = new_packet("ack", recv_buf.src_id, self.ID,
+                                   self.ip_addr, recv_buf.ack_num,
+                                   recv_buf.timestamp, recv_buf.packet_type);
 
             // Signal ACK thread
             PT_SEM_SAFE_SIGNAL(pt, &new_udp_ack_s);
@@ -584,20 +584,20 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
             token_id_number = atoi(recv_buf.msg);
 
             // If I don't have an ID yet, give myself one
-            if (my_id == 0) {
+            if (self.ID == 0) {
                 printf("Assigning myself an ID number:\n");
-                printf("\tParent ID: %3d --> ", parent_ID);
+                printf("\tParent ID: %3d --> ", self.parent_ID);
 
                 // Parent node is whoever gave you the token
-                parent_ID = recv_buf.src_id;
+                self.parent_ID = recv_buf.src_id;
 
-                printf("%3d\n", parent_ID);
-                printf("\tMy ID:     %3d --> ", my_id);
+                printf("%3d\n", self.parent_ID);
+                printf("\tMy ID:     %3d --> ", self.ID);
 
                 // Increment the token number, use that as my ID
-                my_id = ++token_id_number;
+                self.ID = ++token_id_number;
 
-                printf("%3d\n", my_id);
+                printf("%3d\n", self.ID);
             }
 
             // Signal connect thread to scan for neighbors
@@ -708,7 +708,7 @@ static PT_THREAD(protothread_serial(struct pt* pt))
 
         if (strcmp(pt_serial_in_buffer, "token") == 0) {
             // Load the token into the send queue
-            send_queue = new_packet("token", target_ID, my_id, my_addr,
+            send_queue = new_packet("token", target_ID, self.ID, self.ip_addr,
                                     packet_counter, time_us_64(), "1");
 
             // Signal waiting threads
@@ -720,8 +720,8 @@ static PT_THREAD(protothread_serial(struct pt* pt))
 
         } else {
             send_queue =
-                new_packet("data", target_ID, my_id, my_addr, packet_counter,
-                           time_us_64(), pt_serial_in_buffer);
+                new_packet("data", target_ID, self.ID, self.ip_addr,
+                           packet_counter, time_us_64(), pt_serial_in_buffer);
 
             // Signal waiting threads
             PT_SEM_SAFE_SIGNAL(pt, &new_udp_send_s);
@@ -750,21 +750,26 @@ int main()
     // Initialize all stdio types
     stdio_init_all();
 
-    print_bold;
-
 // If this pico is hosting an AP, set access_point to true. The macro is defined
 // at compile-time by CMake allowing for the same file to be compiled into two
 // separate binaries, one for the access point and one for the station.
 #ifdef AP
-    access_point = true;
+    access_point   = true;
+    bool is_master = false;
 #else
-    access_point = false;
-    my_id        = 1;
+    access_point   = false;
+    self.ID        = 1;
+    bool is_master = true;
 #endif
 
+    print_bold;
+
     // Print out whether you're an AP or a station
-    printf("\n\n==================== %s ====================\n\n",
-           (access_point ? "NF Node v2" : "NF Master v2"));
+    printf("\n\n==================== %s v3 ====================\n\n",
+           (access_point ? "NF Node" : "NF Master"));
+
+    // Initialize this node
+    self = new_node(is_master);
 
     // Initialize Wifi chip
     printf("Initializing cyw43...");

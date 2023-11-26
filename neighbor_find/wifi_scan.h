@@ -7,9 +7,6 @@
 // Scan result when no pidogs are found
 #define NO_UNINITIALIZED_NBRS "none"
 
-// Maximum number of nodes that can join the network
-#define MAX_NODES 5
-
 // Whether pidogs were found during a scan
 extern bool pidogs_found;
 
