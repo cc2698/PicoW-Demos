@@ -158,7 +158,7 @@ void progress_bar_blocking(uint16_t bar_ms, int bar_len)
     int interval = (int) (ms / len);
 
     // Print progress bar bookends
-    printf("[%*c]", len, ' ');
+    printf("progress: [%*c]", len, ' ');
 
     // Return to start of bar
     for (int i = 0; i < len + 1; i++) {
@@ -276,9 +276,6 @@ static PT_THREAD(protothread_connect(struct pt* pt))
         connect_err = 0;
 
         if (access_point) {
-            // Switch to station mode
-            printf("Switch to station mode!\n");
-
             // Disable access point
             shutdown_ap();
 
@@ -299,7 +296,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
 
             if (target_ID == -1) {
                 printf("Waiting for nearby APs to boot:\n\t");
-                progress_bar_blocking(2000, 25);
+                progress_bar_blocking(2000, 30);
 
                 // Scan for targets
                 scan_wifi();
