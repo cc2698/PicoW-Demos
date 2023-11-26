@@ -17,6 +17,6 @@ extern char pidog_target_ssid[SSID_LEN];
 extern int is_nbr[MAX_NODES];
 
 // Initiate a wifi scan
-int find_target();
+int scan_wifi();
 
 #endif
