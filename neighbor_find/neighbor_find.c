@@ -60,9 +60,8 @@ char wifi_ssid[SSID_LEN];
 #define MASK_ADDR    "255.255.255.0"
 
 // Wifi name and password
-// #define WIFI_SSID     "picow_test"
-// #define WIFI_PASSWORD "password"
-#define WIFI_PASSWORD NULL
+#define WIFI_PASSWORD "password"
+// #define WIFI_PASSWORD NULL
 
 // UDP recv
 char recv_data[UDP_MSG_LEN_MAX];
@@ -158,11 +157,6 @@ void udp_recv_callback(void* arg, struct udp_pcb* upcb, struct pbuf* p,
     printf("Caught something! (received a packet)\n");
 
     if (p != NULL) {
-        // Blink the LED
-        led_on();
-        cancel_alarm(led_alarm);
-        led_alarm = add_alarm_in_ms(ALARM_MS, alarm_callback, NULL, false);
-
         // Copy the payload into the recv buffer
         memcpy(recv_data, p->payload, UDP_MSG_LEN_MAX);
 
@@ -337,8 +331,10 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                 scan_wifi();
 
                 if (pidogs_found) {
-                    // If pidogs found
-                    if (connect_to_network(pidog_target_ssid) == 0) {
+                    // If pidogs found, copy the result into target_ssid
+                    snprintf(target_ssid, SSID_LEN, "%s", scan_result);
+
+                    if (connect_to_network(target_ssid) == 0) {
 
                         // TODO: Mark as child node
 
@@ -416,15 +412,6 @@ static PT_THREAD(protothread_connect(struct pt* pt))
 
                 boot_access_point();
 
-                // // Initialize UDP recv callback function
-                // udp_remove(udp_recv_pcb);
-                // printf("Initializing recv callback...");
-                // if (udp_recv_callback_init()) {
-                //     printf("receive callback failed to initialize.");
-                // } else {
-                //     printf("callback initialized!\n");
-                // }
-
                 access_point = true;
                 connected_ID = 0;
             }
@@ -447,8 +434,9 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                connected_ID, target_ID, ack_pending);
 
         // Print list of neighbors
-        if (found_neighbors) {
+        if (found_neighbors && access_point) {
             printf("\x1b[32m");
+            printf("NEIGHBOR SEARCH RESULTS:\n");
             printf("My ID number: %d\n", my_id);
             printf("My neighbors: ");
             for (int i = 0; i < MAX_NODES; i++) {
@@ -804,8 +792,6 @@ void core_1_main()
  *  CORE 0 MAIN
  */
 
-// TCP_SERVER_T* state;
-
 int boot_access_point()
 {
     // Allocate TCP server state
@@ -882,6 +868,12 @@ int main()
     }
 
     if (access_point) {
+        // Initialize as pidog_<hex ID>
+        char unique_board_id[20];
+        pico_get_unique_board_id_string(
+            unique_board_id, 2 * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 2);
+        snprintf(wifi_ssid, SSID_LEN, "pidog_%s", unique_board_id);
+
         // Allocate TCP server state
         state = calloc(1, sizeof(TCP_SERVER_T));
         printf("Allocating TCP server state...");
@@ -891,14 +883,6 @@ int main()
         } else {
             printf("allocated!\n");
         }
-
-        // snprintf(wifi_ssid, 50, "%s", "picow_neighbor_find");
-
-        char unique_board_id[20];
-
-        pico_get_unique_board_id_string(
-            unique_board_id, 2 * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 2);
-        snprintf(wifi_ssid, SSID_LEN, "pidog_%s", unique_board_id);
 
         // Turn on access point
         cyw43_arch_enable_ap_mode(wifi_ssid, WIFI_PASSWORD,
@@ -946,6 +930,9 @@ int main()
         printf("Current target SSID = %s\n", target_ssid);
 
         scan_wifi();
+
+        snprintf(target_ssid, SSID_LEN, "%s", scan_result);
+
         printf("New target SSID = %s\n", target_ssid);
 
         // Connect to the access point

@@ -13,7 +13,7 @@
 #include "wifi_scan.h"
 
 bool pidogs_found;
-char pidog_target_ssid[SSID_LEN];
+char scan_result[SSID_LEN];
 
 int is_nbr[MAX_NODES];
 
@@ -33,7 +33,7 @@ static int scan_callback(void* env, const cyw43_ev_scan_result_t* result)
         if (result_is_pidog) {
             printf("\tssid: %-32s rssi: %4d\t<-- Uninitialized node\n",
                    result->ssid, result->rssi);
-            snprintf(pidog_target_ssid, SSID_LEN, "%s", result->ssid);
+            snprintf(scan_result, SSID_LEN, "%s", result->ssid);
         }
 
         if (result_is_picow) {
@@ -61,14 +61,13 @@ static int scan_callback(void* env, const cyw43_ev_scan_result_t* result)
     return 0;
 }
 
-// Initiate a wifi scan
 int scan_wifi()
 {
     // Scan options don't matter
     cyw43_wifi_scan_options_t scan_options = {0};
 
     // Clear last pidog found
-    sprintf(pidog_target_ssid, "");
+    snprintf(scan_result, SSID_LEN, "%s", NO_UNINITIALIZED_NBRS);
 
     printf("Starting Wifi scan...");
 
@@ -91,7 +90,7 @@ int scan_wifi()
     }
 
     // Mark whether any uninitialized nodes were found during the scan
-    if (strcmp(pidog_target_ssid, "") == 0) {
+    if (strcmp(scan_result, NO_UNINITIALIZED_NBRS) == 0) {
         pidogs_found = false;
     } else {
         pidogs_found = true;
