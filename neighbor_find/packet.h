@@ -11,12 +11,12 @@
 #define NUM_PACKET_TYPES 3
 
 // Structure that stores an outgoing packet
-typedef struct outgoing_packet {
+typedef struct packet {
     char packet_type[TOK_LEN];
     int dest_id;
     int src_id;
     char ip_addr[TOK_LEN];
-    int ack_num;
+    unsigned int ack_num;
     uint64_t timestamp;
     char msg[UDP_MSG_LEN_MAX];
 } packet_t;
@@ -24,14 +24,14 @@ typedef struct outgoing_packet {
 // Check if a string is a valid packet type
 bool is_valid_packet_type(char* s);
 
-// Copy a token into a header field.
+// Copy a token into a header field, returns "n/a" if the token is NULL.
 void copy_field(char* field, char* token);
 
 // Convert a packet to a string
 void packet_to_str(char* buf, packet_t p);
 
 // Create a new packet
-packet_t new_packet(char* type, int dest, int src, char* addr, int ack,
+packet_t new_packet(char* type, int dest, int src, char* addr, unsigned int ack,
                     uint64_t t, char* m);
 
 // Convert a string to a packet

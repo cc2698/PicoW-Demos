@@ -22,6 +22,9 @@ node_t new_node(int is_master)
     n.ID        = is_master ? MASTER_ID : DEFAULT_ID;
     n.parent_ID = DEFAULT_ID;
 
+    // Initialize counter to 0
+    n.counter = 0;
+
     // Initialize SSID as pidog_<hex ID>
     char unique_board_id[SSID_LEN];
     pico_get_unique_board_id_string(unique_board_id,

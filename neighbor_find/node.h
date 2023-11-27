@@ -19,6 +19,8 @@ typedef struct node {
     int ID;        // ID number
     int parent_ID; // Parent node ID number
 
+    unsigned int counter; // Count number of packets sent
+
     char wifi_ssid[SSID_LEN];  // My SSID when hosting an access point
     char ip_addr[IP_ADDR_LEN]; // IPv4 address
 

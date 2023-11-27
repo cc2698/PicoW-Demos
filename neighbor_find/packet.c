@@ -40,15 +40,15 @@ void copy_field(char* field, char* token)
     }
 }
 
-packet_t new_packet(char* type, int dest, int src, char* addr, int ack,
+packet_t new_packet(char* type, int dest, int src, char* addr, unsigned int ack,
                     uint64_t t, char* m)
 {
     packet_t op;
 
     snprintf(op.packet_type, TOK_LEN, "%s", type);
+    op.dest_id = dest;
+    op.src_id  = src;
     snprintf(op.ip_addr, TOK_LEN, "%s", addr);
-    op.dest_id   = dest;
-    op.src_id    = src;
     op.ack_num   = ack;
     op.timestamp = t;
     snprintf(op.msg, UDP_MSG_LEN_MAX, "%s", m);
@@ -59,7 +59,7 @@ packet_t new_packet(char* type, int dest, int src, char* addr, int ack,
 void packet_to_str(char* buf, packet_t p)
 {
     // Copy the contents of the packet into the buffer
-    snprintf(buf, UDP_MSG_LEN_MAX, "%s;%d;%d;%s;%d;%llu;%s", p.packet_type,
+    snprintf(buf, UDP_MSG_LEN_MAX, "%s;%d;%d;%s;%u;%llu;%s", p.packet_type,
              p.dest_id, p.src_id, p.ip_addr, p.ack_num, p.timestamp, p.msg);
 }
 
@@ -104,7 +104,7 @@ packet_t str_to_packet(char* s)
     token = strtok(NULL, ";");
     copy_field(ack_num_str, token);
     if (strcmp(ack_num_str, "n/a") != 0) {
-        op.ack_num = atoi(ack_num_str);
+        op.ack_num = strtoul(ack_num_str, NULL, 10);
     }
 
     // Timestamp

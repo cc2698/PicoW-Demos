@@ -38,14 +38,10 @@
 
 #define PRINT_ON_RECV
 #define PRINT_ON_SEND
-#define TEST_PACKET
 
 /*
  *  UDP
  */
-
-// Properties
-int packet_counter = 0;
 
 // UDP constants
 #define UDP_PORT 4444 // Same port number on both devices
@@ -63,7 +59,7 @@ struct pt_sem new_udp_send_s;
 
 // UDP ack
 packet_t ack_queue;
-bool ack_pending                  = false;
+bool ack_queue_empty              = true;
 char return_addr_str[IP_ADDR_LEN] = "255.255.255.255";
 static ip_addr_t return_addr;
 static struct udp_pcb* udp_ack_pcb;
@@ -81,24 +77,6 @@ int target_ID = 0;
 
 // SSID of the target access point
 char target_ssid[SSID_LEN];
-
-/*
- *  ALARM
- */
-
-// Alarm ID and duration
-alarm_id_t led_alarm;
-#define ALARM_MS 750
-
-// Signal core 1 to turn the LED on
-volatile int led_flag = false;
-
-// Alarm callback function
-int64_t alarm_callback(alarm_id_t id, void* user_data)
-{
-    led_off();
-    return 0; // Returns 0 to not reschedule the alarm
-}
 
 /*
  *  NODE INITIALIZATION / NEIGHBOR FINDING
@@ -190,7 +168,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
     static int connect_err;
 
     while (true) {
-        PT_YIELD_UNTIL(pt, signal_connect_thread && !ack_pending);
+        PT_YIELD_UNTIL(pt, signal_connect_thread && ack_queue_empty);
 
         // Reset the signal flag
         signal_connect_thread = false;
@@ -241,7 +219,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                         snprintf(msg_buf, TOK_LEN, "%d", token_id_number);
                         token_packet =
                             new_packet("token", -1, self.ID, self.ip_addr,
-                                       packet_counter, time_us_64(), msg_buf);
+                                       self.counter, time_us_64(), msg_buf);
 
                         // Enqueue packet (or is this done by recv thread?)
                         send_queue = token_packet;
@@ -289,7 +267,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                     snprintf(msg_buf, TOK_LEN, "%d", token_id_number);
                     token_packet =
                         new_packet("token", target_ID, self.ID, self.ip_addr,
-                                   packet_counter, time_us_64(), msg_buf);
+                                   self.counter, time_us_64(), msg_buf);
 
                     // Enqueue packet (or is this done by recv thread?)
                     send_queue = token_packet;
@@ -411,7 +389,7 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
         // cyw43_arch_lwip_end();
 
         if (er == ERR_OK) {
-            packet_counter++;
+            self.counter++;
         } else {
             printf("Failed to send UDP packet! error=%d\n", er);
         }
@@ -489,7 +467,7 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
 
             // Signal ACK thread
             PT_SEM_SAFE_SIGNAL(pt, &new_udp_ack_s);
-            ack_pending = true;
+            ack_queue_empty = false;
         }
 
         // Determine if ack'ing token
@@ -605,7 +583,7 @@ static PT_THREAD(protothread_udp_ack(struct pt* pt))
         er = udp_sendto(udp_ack_pcb, p, &return_addr, UDP_PORT);
         // cyw43_arch_lwip_end();
 
-        ack_pending = false;
+        ack_queue_empty = true;
 
         if (er != ERR_OK) {
             printf("Failed to send UDP ack! error=%d\n", er);
@@ -642,7 +620,7 @@ static PT_THREAD(protothread_serial(struct pt* pt))
 
             // Load the token into the send queue
             send_queue = new_packet("token", target_ID, self.ID, self.ip_addr,
-                                    packet_counter, time_us_64(), "1");
+                                    self.counter, time_us_64(), "1");
 
             // Signal waiting threads
             PT_SEM_SAFE_SIGNAL(pt, &new_udp_send_s);
@@ -654,7 +632,7 @@ static PT_THREAD(protothread_serial(struct pt* pt))
         } else {
             send_queue =
                 new_packet("data", target_ID, self.ID, self.ip_addr,
-                           packet_counter, time_us_64(), pt_serial_in_buffer);
+                           self.counter, time_us_64(), pt_serial_in_buffer);
 
             // Signal waiting threads
             PT_SEM_SAFE_SIGNAL(pt, &new_udp_send_s);
@@ -691,8 +669,6 @@ int main()
 #else
     bool is_master = false;
 #endif
-
-    test_printf_colors();
 
     print_bold;
 
