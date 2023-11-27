@@ -1,4 +1,5 @@
 add_subdirectory(access_point)
 add_subdirectory(blink)
+add_subdirectory(unique_id)
 add_subdirectory(wifi_connect)
 add_subdirectory(wifi_scan)
