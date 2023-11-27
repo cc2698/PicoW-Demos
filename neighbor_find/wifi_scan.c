@@ -10,6 +10,7 @@
 #include "pico/stdlib.h"
 
 // Local
+#include "node.h"
 #include "wifi_scan.h"
 
 bool pidogs_found;

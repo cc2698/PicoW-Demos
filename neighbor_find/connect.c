@@ -17,6 +17,7 @@
 
 // Local
 #include "connect.h"
+#include "node.h"
 
 int access_point = true;
 
@@ -38,7 +39,7 @@ TCP_SERVER_T* state;
 ip4_addr_t mask;
 dhcp_server_t dhcp_server;
 
-int boot_ap(char* ssid)
+int boot_ap()
 {
     // Allocate TCP server state
     state = calloc(1, sizeof(TCP_SERVER_T));
@@ -51,9 +52,10 @@ int boot_ap(char* ssid)
     }
 
     // Enable access point
-    cyw43_arch_enable_ap_mode(ssid, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK);
+    cyw43_arch_enable_ap_mode(self.wifi_ssid, WIFI_PASSWORD,
+                              CYW43_AUTH_WPA2_AES_PSK);
     printf("Access point mode enabled!\n");
-    printf("\tssid = %s\n", ssid);
+    printf("\tssid = %s\n", self.wifi_ssid);
 
     // The variable 'state' is a pointer to a TCP_SERVER_T struct
     // Set up the access point IP address and mask

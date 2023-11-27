@@ -1,18 +1,12 @@
 #ifndef NODE_H
 #define NODE_H
 
-// Maximum number of nodes that can join the network
-#define MAX_NODES 5
+// Local
+#include "network_opts.h"
 
 // Default node ID numbers
 #define MASTER_ID  1
 #define DEFAULT_ID 0
-
-// Max SSID length
-#define SSID_LEN 50
-
-// Max IP address length (slightly bigger than an IPv4 address)
-#define IP_ADDR_LEN 20
 
 // Node struct
 typedef struct node {

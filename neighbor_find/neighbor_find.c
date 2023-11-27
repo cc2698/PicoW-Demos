@@ -295,7 +295,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
 
                 // Turn on the access point
                 snprintf(self.wifi_ssid, SSID_LEN, "picow_%d", self.ID);
-                boot_ap(self.wifi_ssid);
+                boot_ap();
 
                 connected_ID = 0;
             }
@@ -706,7 +706,7 @@ int main()
 
     } else {
         // Turn on the access point
-        boot_ap(self.wifi_ssid);
+        boot_ap();
     }
 
     // Initialize UDP recv callback function

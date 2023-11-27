@@ -2,7 +2,7 @@
 #define CONNECT_H
 
 // Local
-#include "node.h"
+#include "network_opts.h"
 
 // Wifi password
 #define WIFI_PASSWORD "password"

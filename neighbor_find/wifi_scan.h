@@ -2,7 +2,7 @@
 #define WIFI_SCAN_H
 
 // Local
-#include "node.h"
+#include "network_opts.h"
 
 // Scan result when no pidogs are found
 #define NO_UNINITIALIZED_NBRS "none"
