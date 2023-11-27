@@ -32,6 +32,7 @@ target_compile_definitions(nbr_find_master PRIVATE MASTER)
 target_sources(nbr_find_master PRIVATE
 		neighbor_find.c
 		connect.c
+		layout.c
 		node.c
 		packet.c
 		utils.c
@@ -59,6 +60,7 @@ pico_enable_stdio_uart(nbr_find 1)
 target_sources(nbr_find PRIVATE
 		neighbor_find.c
 		connect.c
+		layout.c
 		node.c
 		packet.c
 		utils.c
