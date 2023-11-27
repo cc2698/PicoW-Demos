@@ -40,3 +40,26 @@ node_t new_node(int is_master)
 
     return n;
 }
+
+void print_neighbors()
+{
+    printf("\n");
+    printf("NEIGHBOR SEARCH RESULTS:\n");
+    printf("My ID:        %d\n", self.ID);
+
+    // Print parent
+    if (self.parent_ID == DEFAULT_ID) {
+        printf("Parent ID:    n/a (root node)\n");
+    } else {
+        printf("Parent ID:    %d\n", self.parent_ID);
+    }
+
+    // Print neighbors
+    printf("Neighbors:  [ ");
+    for (int i = 0; i < MAX_NODES; i++) {
+        if (self.ID_is_nbr[i]) {
+            printf("%d ", i);
+        }
+    }
+    printf("]\n");
+}

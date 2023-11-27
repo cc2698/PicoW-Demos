@@ -38,4 +38,7 @@ extern node_t self;
 // Create a new node with default values
 node_t new_node(int is_master);
 
+// Print results of neighbor search
+void print_neighbors();
+
 #endif

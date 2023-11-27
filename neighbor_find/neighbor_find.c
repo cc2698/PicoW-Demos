@@ -90,23 +90,33 @@ char target_ssid[SSID_LEN];
 
 volatile int led_state = LOW;
 
-#define led_on()                                                               \
-    do {                                                                       \
-        led_state = HIGH;                                                      \
-        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_state);                 \
-    } while (0);
+// #define led_on()                                                               \
+//     do {                                                                       \
+//         led_state = HIGH;                                                      \
+//         cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_state);                 \
+//     } while (0);
 
-#define led_off()                                                              \
-    do {                                                                       \
-        led_state = LOW;                                                       \
-        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_state);                 \
-    } while (0);
+// #define led_off()                                                              \
+//     do {                                                                       \
+//         led_state = LOW;                                                       \
+//         cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_state);                 \
+//     } while (0);
 
-#define led_toggle()                                                           \
-    do {                                                                       \
-        led_state = !led_state;                                                \
-        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_state);                 \
-    } while (0);
+// #define led_toggle()                                                           \
+//     do {                                                                       \
+//         led_state = !led_state;                                                \
+//         cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_state);                 \
+//     } while (0);
+
+void led_on()
+{
+    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, HIGH);
+}
+
+void led_off()
+{
+    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, LOW);
+}
 
 /*
  *  PRINTF COLORS
@@ -143,28 +153,6 @@ int64_t alarm_callback(alarm_id_t id, void* user_data)
 
 // The ID number specified by the token
 int token_id_number;
-
-// Print list of neighbors
-void print_neighbors()
-{
-    print_green;
-    printf("\n");
-    printf("NEIGHBOR SEARCH RESULTS:\n");
-    printf("My ID:         %d\n", self.ID);
-    if (self.parent_ID == DEFAULT_ID) {
-        printf("Parent ID:     n/a (root node)\n");
-    } else {
-        printf("Parent ID:     %d\n", self.parent_ID);
-    }
-    printf("My neighbors:  [ ");
-    for (int i = 0; i < MAX_NODES; i++) {
-        if (self.ID_is_nbr[i]) {
-            printf("%d ", i);
-        }
-    }
-    printf("]\n");
-    print_reset;
-}
 
 /*
  *  MISC
@@ -257,6 +245,8 @@ int udp_recv_callback_init(void)
  *	THREADS
  */
 
+#define RE_INIT_CYW43_BETWEEN_MODES false
+
 // =================================================
 // Connection managing thread
 // =================================================
@@ -285,6 +275,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             // Disable access point
             shutdown_ap();
 
+#if RE_INIT_CYW43_BETWEEN_MODES
             // Re-initialize Wifi chip
             cyw43_arch_deinit();
             printf("Initializing cyw43...");
@@ -294,6 +285,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             } else {
                 printf("initialized!\n");
             }
+#endif
 
             // Enable station
             boot_station();
@@ -384,6 +376,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                 // Disable station
                 shutdown_station();
 
+#if RE_INIT_CYW43_BETWEEN_MODES
                 // Re-initialize Wifi chip
                 cyw43_arch_deinit();
                 printf("Initializing cyw43...");
@@ -393,6 +386,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                 } else {
                     printf("initialized!\n");
                 }
+#endif
 
                 // Turn on the access point
                 snprintf(self.wifi_ssid, SSID_LEN, "picow_%d", self.ID);
@@ -576,7 +570,9 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         if (is_ack) {
             if (strcmp(recv_buf.msg, "token") == 0) {
                 printf("Token has been ack'ed\n");
+
                 // Signal connect thread to re-enable AP mode
+                led_off();
                 target_ID             = 0;
                 signal_connect_thread = true;
             }
@@ -585,6 +581,8 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         // Assign ID number
         if (is_token) {
             printf("Received the token\n");
+
+            led_on();
 
             // Convert the token number into an integer
             token_id_number = atoi(recv_buf.msg);
@@ -714,6 +712,8 @@ static PT_THREAD(protothread_serial(struct pt* pt))
         serial_read;
 
         if (strcmp(pt_serial_in_buffer, "token") == 0) {
+            led_on();
+
             // Load the token into the send queue
             send_queue = new_packet("token", target_ID, self.ID, self.ip_addr,
                                     packet_counter, time_us_64(), "1");
@@ -787,7 +787,8 @@ int main()
     if (is_master) {
         // If all Pico-Ws boot at the same time, this delay gives the other
         // nodes time to setup before the master tries to scan.
-        sleep_ms(1000);
+        printf("Waiting for nearby APs to boot:\n\t");
+        progress_bar_blocking(2000, 30);
 
         // Enable station mode
         boot_station();
