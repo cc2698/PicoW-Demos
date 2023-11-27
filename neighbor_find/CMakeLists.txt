@@ -34,6 +34,7 @@ target_sources(nbr_find_master PRIVATE
 		connect.c
 		node.c
 		packet.c
+		utils.c
 		wifi_scan.c
 		dhcpserver/dhcpserver.c
 )
@@ -60,6 +61,7 @@ target_sources(nbr_find PRIVATE
 		connect.c
 		node.c
 		packet.c
+		utils.c
 		wifi_scan.c
 		dhcpserver/dhcpserver.c
 )
