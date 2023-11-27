@@ -13,9 +13,6 @@ extern bool pidogs_found;
 // The SSID of the most recent pidog_<hex ID> wifi network
 extern char scan_result[SSID_LEN];
 
-// (Placeholder) track neighbors by ID
-extern int is_nbr[MAX_NODES];
-
 // Non-ID scan targets
 enum {
     RUN_SCAN  = -1,
