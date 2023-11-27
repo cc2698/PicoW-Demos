@@ -10,6 +10,7 @@
 
 // Local
 #include "node.h"
+#include "utils.h"
 
 node_t self;
 
@@ -43,6 +44,7 @@ node_t new_node(int is_master)
 
 void print_neighbors()
 {
+    print_green;
     printf("\n");
     printf("NEIGHBOR SEARCH RESULTS:\n");
     printf("My ID:        %d\n", self.ID);
@@ -62,4 +64,5 @@ void print_neighbors()
         }
     }
     printf("]\n");
+    print_reset;
 }

@@ -29,6 +29,7 @@
 #include "connect.h"
 #include "node.h"
 #include "packet.h"
+#include "utils.h"
 #include "wifi_scan.h"
 
 /*
@@ -82,54 +83,6 @@ int target_ID = 0;
 char target_ssid[SSID_LEN];
 
 /*
- *  LED
- */
-
-#define HIGH 1
-#define LOW  0
-
-volatile int led_state = LOW;
-
-// #define led_on()                                                               \
-//     do {                                                                       \
-//         led_state = HIGH;                                                      \
-//         cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_state);                 \
-//     } while (0);
-
-// #define led_off()                                                              \
-//     do {                                                                       \
-//         led_state = LOW;                                                       \
-//         cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_state);                 \
-//     } while (0);
-
-// #define led_toggle()                                                           \
-//     do {                                                                       \
-//         led_state = !led_state;                                                \
-//         cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_state);                 \
-//     } while (0);
-
-void led_on()
-{
-    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, HIGH);
-}
-
-void led_off()
-{
-    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, LOW);
-}
-
-/*
- *  PRINTF COLORS
- */
-
-#define print_bold   printf("\x1b[1m")
-#define print_italic printf("\x1b[3m")
-#define print_green  printf("\x1b[32m")
-#define print_yellow printf("\x1b[33m")
-#define print_cyan   printf("\x1b[36m")
-#define print_reset  printf("\x1b[0m")
-
-/*
  *  ALARM
  */
 
@@ -153,35 +106,6 @@ int64_t alarm_callback(alarm_id_t id, void* user_data)
 
 // The ID number specified by the token
 int token_id_number;
-
-/*
- *  MISC
- */
-
-// Sleep and animate a progress bar
-void progress_bar_blocking(uint16_t bar_ms, int bar_len)
-{
-    // Bar length and dot interval
-    int ms       = bar_ms > 9999 ? 9999 : bar_ms;
-    int len      = bar_len > 40 ? 40 : bar_len;
-    int interval = (int) (ms / len);
-
-    // Print progress bar bookends
-    printf("progress: [%*c]", len, ' ');
-
-    // Return to start of bar
-    for (int i = 0; i < len + 1; i++) {
-        printf("\b");
-        // sleep_ms(interval);
-    }
-
-    // Animate dots
-    for (int i = 0; i < len; i++) {
-        printf(".");
-        sleep_ms(interval);
-    }
-    printf("\n");
-}
 
 /*
  *	UDP CALLBACK SETUP
@@ -245,6 +169,9 @@ int udp_recv_callback_init(void)
  *	THREADS
  */
 
+// Re-initialize the Wifi chip when switching between AP and station modes.
+// Limited amounts of testing suggests that this isn't necessary but I'm leaving
+// it here in just in case I need to turn it back on.
 #define RE_INIT_CYW43_BETWEEN_MODES false
 
 // =================================================
@@ -295,7 +222,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
 
             if (target_ID == RUN_SCAN) {
                 printf("Waiting for nearby APs to boot:\n\t");
-                progress_bar_blocking(2000, 30);
+                sleep_ms_progress_bar(2000, 30);
 
                 // Scan for targets
                 scan_wifi();
@@ -540,7 +467,6 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         }
 #else
         // Print formatted packet contents
-        print_italic;
         print_cyan;
         printf("| Incoming...\n");
         print_packet(recv_data, recv_buf);
@@ -766,6 +692,8 @@ int main()
     bool is_master = false;
 #endif
 
+    test_printf_colors();
+
     print_bold;
 
     // Print out whether you're an AP or a station
@@ -788,7 +716,7 @@ int main()
         // If all Pico-Ws boot at the same time, this delay gives the other
         // nodes time to setup before the master tries to scan.
         printf("Waiting for nearby APs to boot:\n\t");
-        progress_bar_blocking(2000, 30);
+        sleep_ms_progress_bar(2000, 30);
 
         // Enable station mode
         boot_station();
