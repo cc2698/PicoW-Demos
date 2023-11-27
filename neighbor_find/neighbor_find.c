@@ -122,7 +122,7 @@ int udp_recv_callback_init(void)
         err_t err;
 
         // Bind the UDP PCB to the socket
-        // - netif_ip4_addr returns the picow ip address
+        // - netif_ip4_addr returns the pico-w ip address
         err = udp_bind(udp_recv_pcb, netif_ip4_addr(netif_list),
                        UDP_PORT); // DHCP addr
 
@@ -229,7 +229,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                     }
                 } else {
                     // Flag that neighbors have been recorded
-                    self.is_initialized = true;
+                    self.knows_nbrs = true;
 
                     if (self.ID == MASTER_ID) {
                         // Master node has received token back, and has no
@@ -311,7 +311,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
         }
 
         // Print list of neighbors
-        if (self.is_initialized && access_point) {
+        if (self.knows_nbrs && access_point) {
             // Print list of neighbors
             print_neighbors();
         }

@@ -39,8 +39,8 @@ node_t new_node(int is_master)
         n.ID_is_nbr[i] = false;
     }
 
-    // Initialize as uninitialized (makes perfect sense right)
-    n.is_initialized = false;
+    // Doesn't know neighbors at initialization
+    n.knows_nbrs = false;
 
     return n;
 }

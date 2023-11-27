@@ -25,7 +25,7 @@ typedef struct node {
     char ip_addr[IP_ADDR_LEN]; // IPv4 address
 
     int ID_is_nbr[MAX_NODES]; // True if ID is a neighbor
-    int is_initialized;       // Has the node been assigned an ID and found its
+    int knows_nbrs;           // Has the node been assigned an ID and found its
                               // neighbors
 } node_t;
 
