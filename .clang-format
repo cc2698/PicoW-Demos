@@ -12,6 +12,7 @@ FixNamespaceComments: true
 IncludeBlocks: Preserve
 IndentCaseBlocks: false
 IndentCaseLabels: false
+IndentPPDirectives: AfterHash
 IndentWidth: 4
 PointerAlignment: Left
 ReflowComments: true
