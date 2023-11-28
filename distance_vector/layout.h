@@ -5,9 +5,8 @@
 #include "network_opts.h"
 
 // Define the USE_LAYOUT macro to use a preset layout of the network.
-// (EXISTS FOR TESTING PURPOSES ONLY)
-#define USE_LAYOUT
-
+// (CMake will compile a separate set of binaries with this defined)
+// (Exists for testing purposes only)
 #ifdef USE_LAYOUT
 
 // Which layout number to use
