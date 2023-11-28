@@ -1,6 +1,7 @@
 #ifndef LAYOUT_H
 #define LAYOUT_H
 
+// Local
 #include "network_opts.h"
 
 // Define the USE_LAYOUT macro to use a preset layout of the network.
@@ -10,7 +11,9 @@
 #ifdef USE_LAYOUT
 
 // Which layout number to use
-#    define LAYOUT 3
+#    ifndef LAYOUT
+#        define LAYOUT 0
+#    endif
 
 // End of list indicator
 #    define EOL -1
