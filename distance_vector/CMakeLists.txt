@@ -9,7 +9,7 @@ set(CMAKE_C_STANDARD 11)
 # include(pico_sdk_import.cmake)
 
 # Project name
-project(distance_vector)
+project(distance_vector_routing)
 
 # Initialize the Pico C/C++ SDK
 if (PICO_SDK_VERSION_STRING VERSION_LESS "1.3.0")
@@ -27,6 +27,7 @@ pico_sdk_init()
 set(SourceList
 		main.c
 		connect.c
+		distance_vector.c
 		layout.c
 		node.c
 		packet.c
@@ -98,7 +99,6 @@ add_executable(dv_LAYOUT_node_UART)
 pico_enable_stdio_usb(dv_LAYOUT_node_UART 0)
 pico_enable_stdio_uart(dv_LAYOUT_node_UART 1)
 target_compile_definitions(dv_LAYOUT_node_UART PRIVATE
-		MASTER
 		USE_LAYOUT
 		)
 target_sources(dv_LAYOUT_node_UART PRIVATE ${SourceList})
@@ -109,7 +109,6 @@ add_executable(dv_LAYOUT_node_USB)
 pico_enable_stdio_usb(dv_LAYOUT_node_USB 1)
 pico_enable_stdio_uart(dv_LAYOUT_node_USB 0)
 target_compile_definitions(dv_LAYOUT_node_USB PRIVATE
-		MASTER
 		USE_LAYOUT
 		SERIAL_OVER_USB
 		)
