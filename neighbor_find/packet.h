@@ -1,6 +1,9 @@
 #ifndef PACKET_H
 #define PACKET_H
 
+// C Libraries
+#include <stdbool.h>
+
 // Max length of a UDP packet
 #define UDP_MSG_LEN_MAX 1400
 
