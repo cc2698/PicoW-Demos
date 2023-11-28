@@ -25,7 +25,7 @@ pico_sdk_init()
 
 # Source (*.c) files
 set(SourceList
-		distance_vector.c
+		main.c
 		connect.c
 		layout.c
 		node.c
