@@ -671,6 +671,12 @@ int main()
     // Initialize all stdio types
     stdio_init_all();
 
+#ifdef SERIAL_OVER_USB
+    // Press ENTER to start if using serial over USB. This gives you time to
+    // restart the PuTTY terminal before initialization starts.
+    getchar();
+#endif
+
     // Print anything output during main() in bold
     print_reset;
     print_bold;
