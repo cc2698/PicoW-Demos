@@ -2,15 +2,14 @@
 # CMake version
 cmake_minimum_required(VERSION 3.12)
 
-# Project name (anything you want)
-project(lwip_testing)
-
-# Specify minimum C/C++ standard
-# set(CMAKE_C_STANDARD 11)
-# set(CMAKE_CXX_STANDARD 17)
+# Specify minimum C standard
+set(CMAKE_C_STANDARD 11)
 
 # Include the Pico sdk.cmake file
 # include(pico_sdk_import.cmake)
+
+# Project name
+project(neighbor_find)
 
 # Initialize the Pico C/C++ SDK
 if (PICO_SDK_VERSION_STRING VERSION_LESS "1.3.0")
