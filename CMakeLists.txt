@@ -13,9 +13,10 @@ set(CHRIS_PICO_W_EXAMPLES_PATH ${PROJECT_SOURCE_DIR})
 pico_sdk_init()
 
 # Add multi example
-add_subdirectory(Access_Point)
 add_subdirectory(debug)
+add_subdirectory(distance_vector)
 add_subdirectory(neighbor_find)
+add_subdirectory(TCP)
 add_subdirectory(UDP)
 
 add_compile_options(-Wall
