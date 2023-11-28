@@ -11,7 +11,7 @@
 #define TOK_LEN 40
 
 // Packet types
-#define NUM_PACKET_TYPES 3
+#define NUM_PACKET_TYPES 4
 
 // Structure that stores an outgoing packet
 typedef struct packet {

@@ -10,7 +10,7 @@
 #include "packet.h"
 
 // List of valid packet types
-const char* packet_types[NUM_PACKET_TYPES] = {"data", "ack", "token"};
+const char* packet_types[NUM_PACKET_TYPES] = {"data", "ack", "token", "dv"};
 
 bool is_valid_packet_type(char* s)
 {
