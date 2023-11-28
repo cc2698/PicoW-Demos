@@ -1,7 +1,6 @@
 
 // C libraries
 #include <stdbool.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,7 +16,7 @@
 #    if LAYOUT == 0
 
 // Two nodes
-unsigned int network_adj_list[MAX_NODES][MAX_NODES] = {
+int network_adj_list[MAX_NODES][MAX_NODES] = {
     {1, EOL}, // 0
     {0, EOL}, // 1
     {EOL},    // 2
@@ -27,7 +26,7 @@ unsigned int network_adj_list[MAX_NODES][MAX_NODES] = {
 #    elif LAYOUT == 1
 
 // Four nodes in a line
-unsigned int network_adj_list[MAX_NODES][MAX_NODES] = {
+int network_adj_list[MAX_NODES][MAX_NODES] = {
     {1, EOL},    // 0
     {0, 2, EOL}, // 1
     {1, 3, EOL}, // 2
@@ -38,7 +37,7 @@ unsigned int network_adj_list[MAX_NODES][MAX_NODES] = {
 
 // Four nodes
 // 1 center node and 3 leaf nodes
-unsigned int network_adj_list[MAX_NODES][MAX_NODES] = {
+int network_adj_list[MAX_NODES][MAX_NODES] = {
     {1, EOL},       // 0
     {0, 2, 3, EOL}, // 1
     {1, EOL},       // 2
@@ -48,8 +47,8 @@ unsigned int network_adj_list[MAX_NODES][MAX_NODES] = {
 #    elif LAYOUT == 3
 
 // Four nodes
-// 3 nodes in a triange with 1 leaf node hanging off a corner
-unsigned int network_adj_list[MAX_NODES][MAX_NODES] = {
+// 3 nodes in a triangle with 1 leaf node hanging off a corner
+int network_adj_list[MAX_NODES][MAX_NODES] = {
     {1, 2, EOL},    // 0
     {0, 2, EOL},    // 1
     {0, 1, 3, EOL}, // 2
