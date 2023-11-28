@@ -72,6 +72,29 @@ node_t new_node(int is_master)
     return n;
 }
 
+void init_neighbors()
+{
+    for (int i = 0; i < MAX_NODES; i++) {
+        if (self.ID_is_nbr[i]) {
+            // Allocate a new neighbor
+            nbr_t* nb = malloc(sizeof(struct nbr));
+
+            // Populate fields
+            nb->ID   = i;
+            nb->cost = 1;
+            for (int j = 0; j < MAX_NODES; j++) {
+                // Initialize fresh distance vector
+                nb->distance_vector[j] = NO_ROUTE;
+            }
+
+            // Add entry
+            self.nbrs[self.num_nbrs] = nb;
+        }
+    }
+}
+
+void calculate_distance_vector();
+
 void print_neighbors()
 {
     print_green;
