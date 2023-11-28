@@ -37,6 +37,7 @@ packet_t new_packet(char* type, int dest, int src, char* addr, unsigned int ack,
 // Convert a string to a packet
 packet_t str_to_packet(char* s);
 
+// Print out the contents of a packet
 void print_packet(char* payload, packet_t p);
 
 #endif

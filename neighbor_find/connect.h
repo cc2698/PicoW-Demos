@@ -24,6 +24,7 @@ extern char dest_addr_str[IP_ADDR_LEN];
 // ID to which this pico is currently connected
 extern int connected_ID;
 
+// Generate a picow SSID
 void generate_picow_ssid(char* buf, int picow_ID);
 
 // Boot up the access point, returns 0 on success.
