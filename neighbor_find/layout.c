@@ -16,17 +16,15 @@
 #    if LAYOUT == 0
 
 // Two nodes
-int network_adj_list[MAX_NODES][MAX_NODES] = {
+int adj_list[MAX_NODES][MAX_NODES] = {
     {1, EOL}, // 0
     {0, EOL}, // 1
-    {EOL},    // 2
-    {EOL}     // 3
 };
 
 #    elif LAYOUT == 1
 
 // Four nodes in a line
-int network_adj_list[MAX_NODES][MAX_NODES] = {
+int adj_list[MAX_NODES][MAX_NODES] = {
     {1, EOL},    // 0
     {0, 2, EOL}, // 1
     {1, 3, EOL}, // 2
@@ -37,7 +35,7 @@ int network_adj_list[MAX_NODES][MAX_NODES] = {
 
 // Four nodes
 // 1 center node and 3 leaf nodes
-int network_adj_list[MAX_NODES][MAX_NODES] = {
+int adj_list[MAX_NODES][MAX_NODES] = {
     {1, EOL},       // 0
     {0, 2, 3, EOL}, // 1
     {1, EOL},       // 2
@@ -48,7 +46,7 @@ int network_adj_list[MAX_NODES][MAX_NODES] = {
 
 // Four nodes
 // 3 nodes in a triangle with 1 leaf node hanging off a corner
-int network_adj_list[MAX_NODES][MAX_NODES] = {
+int adj_list[MAX_NODES][MAX_NODES] = {
     {1, 2, EOL},    // 0
     {0, 2, EOL},    // 1
     {0, 1, 3, EOL}, // 2
@@ -76,17 +74,17 @@ int init_layout()
     // For each row in the adjacency list, check if the first two entries are
     // zero. If they are, then the row has no values.
     for (int i = 0; i < MAX_NODES; i++) {
-        if (network_adj_list[i][0] == 0 && network_adj_list[i][1] == 0) {
-            network_adj_list[i][0] = EOL;
+        if (adj_list[i][0] == 0 && adj_list[i][1] == 0) {
+            adj_list[i][0] = EOL;
         }
     }
     // For each row in the adjacency list, iterate through its entries and set
     // the corresponding values in the connectivity array.
     for (int ID_1 = 0; ID_1 < MAX_NODES; ID_1++) {
-        for (int j = 0; network_adj_list[ID_1][j] != EOL; j++) {
+        for (int j = 0; adj_list[ID_1][j] != EOL; j++) {
 
             // ID of adjacent node
-            int ID_2 = network_adj_list[ID_1][j];
+            int ID_2 = adj_list[ID_1][j];
 
             // Check for self-adjacency
             if (ID_1 == ID_2) {
@@ -133,15 +131,15 @@ void print_adj_list(int phys_ID)
     printf("\n");
 
     // Print entries
-    for (int i = 0; i < MAX_NODES; i++) {
+    for (int i = 0; i < MAX_NODES && adj_list[i][0] != EOL; i++) {
         if (i == phys_ID) {
             printf(" --> %3d  |  [ ", i);
         } else {
             printf("     %3d  |  [ ", i);
         }
 
-        for (int j = 0; network_adj_list[i][j] != EOL; j++) {
-            printf("%d ", network_adj_list[i][j]);
+        for (int j = 0; adj_list[i][j] != EOL; j++) {
+            printf("%d ", adj_list[i][j]);
         }
         printf("]\n");
     }
