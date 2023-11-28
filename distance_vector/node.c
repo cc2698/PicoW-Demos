@@ -61,56 +61,22 @@ node_t new_node(int is_master)
     // Initialize with default IP address
     snprintf(n.ip_addr, IP_ADDR_LEN, "%s", "255.255.255.255");
 
-    // Initialize with no neighbors
-    for (int i = 0; i < MAX_NODES; i++) {
-        n.ID_is_nbr[i] = false;
-    }
-
     // Doesn't know neighbors at initialization
     n.knows_nbrs = false;
 
-    return n;
-}
-
-void init_neighbors()
-{
+    // Initialize with no neighbors
     for (int i = 0; i < MAX_NODES; i++) {
-        if (self.ID_is_nbr[i]) {
-            // Allocate a new neighbor
-            nbr_t* nb = malloc(sizeof(struct nbr));
-
-            // Populate fields
-            nb->ID   = i;
-            nb->cost = 1;
-            for (int j = 0; j < MAX_NODES; j++) {
-                // Initialize fresh distance vector
-                nb->distance_vector[j] = NO_ROUTE;
-            }
-
-            // Add entry
-            self.nbrs[self.num_nbrs] = nb;
-        }
+        n.ID_is_nbr[i] = false;
+        n.nbrs[i]      = NULL;
     }
-}
 
-void calculate_distance_vector()
-{
-    // TODO
-}
+    // Initialize with empty DV and routing table
+    for (int i = 0; i < MAX_NODES; i++) {
+        n.distance_vector[i] = DIST_IF_NO_ROUTE;
+        n.routing_table[i]   = NO_ROUTE;
+    }
 
-void str_to_dv(node_t* n, int nbr_ID, char* dv)
-{
-    // TODO
-}
-
-void dv_to_str(char* buf, int ID, int dv[], bool poison)
-{
-    // TODO
-}
-
-void print_distance_vector(int ID, int dv[])
-{
-    // TODO
+    return n;
 }
 
 void print_neighbors()

@@ -12,14 +12,13 @@
 #define MASTER_ID  0
 #define DEFAULT_ID -1
 
-// Value in the distance vector if no route is currently known
-#define NO_ROUTE MAX_NODES
-
 // Neighbor struct
 typedef struct nbr {
     int ID;                         // ID number
     int cost;                       // Cost of sending a packet to this neighbor
     int distance_vector[MAX_NODES]; // My distance vector
+    bool up_to_date[MAX_NODES]; // Does this neighbor have the most up-to-date
+                                // copy of my distance vector?
 } nbr_t;
 
 // Node struct
@@ -39,7 +38,7 @@ typedef struct node {
 
     int knows_nbrs; // Has the node been assigned an ID and found its neighbors
 
-    int ID_is_nbr[MAX_NODES]; // Hashmap (<ID>, <bool>), true if neighbor
+    int ID_is_nbr[MAX_NODES]; // Hashmap (<ID>, <bool>), true if ID is neighbor
     nbr_t* nbrs[MAX_NODES];   // List of my neighbors
     int num_nbrs;             // Number of entries in the nbrs[] array
 
@@ -53,23 +52,6 @@ extern node_t self;
 
 // Create a new node with default values
 node_t new_node(int is_master);
-
-// Allocate a new nbr_t for each true value in self.ID_is_nbr[]
-void init_neighbors();
-
-// Recalculate distance vector using neighbors
-void calculate_distance_vector();
-
-// Convert a string to a distance vector, and store it as the distance vector of
-// neighbor <nbr_ID>
-void str_to_dv(node_t* n, int nbr_ID, char* dv_str);
-
-// Convert a distance vector to a string, if [poison == true] use poisoned
-// reverse
-void dv_to_str(char* buf, int ID, int dv[], bool poison);
-
-// Print a distance vector
-void print_distance_vector(int ID, int dv[]);
 
 // Print results of neighbor search
 void print_neighbors();

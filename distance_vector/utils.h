@@ -14,6 +14,7 @@
 #define print_magenta printf("\x1b[35m")
 #define print_cyan    printf("\x1b[36m")
 #define print_white   printf("\x1b[37m")
+#define print_orange  printf("\x1b[38;2;255;165;0m")
 #define print_reset   printf("\x1b[0m")
 
 // LED functions

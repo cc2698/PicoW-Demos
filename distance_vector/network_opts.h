@@ -10,4 +10,9 @@
 // Max IP address length (slightly bigger than an IPv4 address)
 #define IP_ADDR_LEN 20
 
+// Routing algorithm values
+#define DIST_IF_NO_ROUTE MAX_NODES
+#define NO_ROUTE         -1
+#define DEFAULT_COST     1
+
 #endif

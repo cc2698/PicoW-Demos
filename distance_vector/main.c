@@ -27,6 +27,7 @@
 
 // Local
 #include "connect.h"
+#include "distance_vector.h"
 #include "node.h"
 #include "packet.h"
 #include "utils.h"
@@ -229,7 +230,11 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                     }
                 } else {
                     // Flag that neighbors have been recorded
-                    self.knows_nbrs = true;
+                    if (!self.knows_nbrs) {
+                        self.knows_nbrs = true;
+
+                        init_dist_vector_routing(&self);
+                    }
 
                     if (self.ID == MASTER_ID) {
                         // Master node has received token back, and has no
@@ -314,6 +319,10 @@ static PT_THREAD(protothread_connect(struct pt* pt))
         if (self.knows_nbrs && access_point) {
             // Print list of neighbors
             print_neighbors();
+
+            // Print distance vector and routing table
+            print_distance_vector(self.ID, self.distance_vector);
+            print_routing_table(self.ID, self.routing_table);
         }
 
         PT_YIELD(pt);
@@ -682,7 +691,7 @@ int main()
     print_bold;
 
     // Print out whether you're an AP or a station
-    printf("\n\n==================== DV Routing %s v5 ====================\n\n",
+    printf("\n\n==================== DV Routing %s v1 ====================\n\n",
            (is_master ? "Master" : "Node"));
 
 #ifdef USE_LAYOUT
