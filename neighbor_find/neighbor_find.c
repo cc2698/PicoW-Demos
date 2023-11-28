@@ -73,7 +73,7 @@ struct pt_sem new_udp_ack_s;
 bool signal_connect_thread = false;
 
 // ID to target during connection. Can take special values
-int target_ID = 0;
+int target_ID = ENABLE_AP;
 
 // SSID of the target access point
 char target_ssid[SSID_LEN];
@@ -238,13 +238,13 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                         // (Placeholder) Signal the connect thread to turn
                         // the AP on one more time.
                         signal_connect_thread = true;
-                        target_ID             = 0;
+                        target_ID             = ENABLE_AP;
                     } else {
                         // If node is not the master node, hand the token
                         // back to the parent node
                         target_ID = self.parent_ID;
 
-                        print_yellow;
+                        print_green;
                         printf("\nNO UNINITIALIZED NEIGHBORS, SEND TOKEN "
                                "BACK TO PARENT NODE\n\n");
                         print_reset;
@@ -252,9 +252,12 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                 }
             }
 
-            if (target_ID > 0) {
+            if (target_ID >= 0) {
+                // // Connect to someone else's network
+                // snprintf(target_ssid, SSID_LEN, "picow_%d", target_ID);
+
                 // Connect to someone else's network
-                snprintf(target_ssid, SSID_LEN, "picow_%d", target_ID);
+                generate_picow_ssid(target_ssid, target_ID);
 
                 // Try to connect to wifi
                 connect_err = connect_to_network(target_ssid);
@@ -292,12 +295,15 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                     printf("initialized!\n");
                 }
 #endif
+                // // Turn on the access point
+                // snprintf(self.wifi_ssid, SSID_LEN, "picow_%d", self.ID);
 
                 // Turn on the access point
-                snprintf(self.wifi_ssid, SSID_LEN, "picow_%d", self.ID);
+                generate_picow_ssid(self.wifi_ssid, self.ID);
+
                 boot_ap();
 
-                connected_ID = 0;
+                connected_ID = ENABLE_AP;
             }
         }
 
@@ -477,7 +483,7 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
 
                 // Signal connect thread to re-enable AP mode
                 led_off();
-                target_ID             = 0;
+                target_ID             = ENABLE_AP;
                 signal_connect_thread = true;
             }
         }
@@ -492,12 +498,12 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
             token_id_number = atoi(recv_buf.msg);
 
             // If I don't have an ID yet, give myself one
-            if (self.ID == 0) {
+            if (self.ID == DEFAULT_ID) {
                 printf("Assigning myself an ID number:\n");
                 printf("\tMy ID:     %3d --> ", self.ID);
 
-                // Increment the token number, use that as my ID
-                self.ID = ++token_id_number;
+                // Give myself an ID, increment the token
+                self.ID = token_id_number++;
 
                 printf("%3d\n", self.ID);
 
@@ -510,7 +516,7 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
             }
 
             // Signal connect thread to scan for neighbors
-            target_ID             = -1;
+            target_ID             = RUN_SCAN;
             signal_connect_thread = true;
         }
 
@@ -583,6 +589,7 @@ static PT_THREAD(protothread_udp_ack(struct pt* pt))
         er = udp_sendto(udp_ack_pcb, p, &return_addr, UDP_PORT);
         // cyw43_arch_lwip_end();
 
+        // The thread protothread_connect waits on this flag
         ack_queue_empty = true;
 
         if (er != ERR_OK) {
@@ -658,9 +665,6 @@ void core_1_main()
 
 int main()
 {
-    // Initialize all stdio types
-    stdio_init_all();
-
 // If this pico is the master node, set is_master to true. The macro is defined
 // at compile-time by CMake allowing for the same file to be compiled into two
 // separate binaries, one for the access point and one for the station.
@@ -670,11 +674,30 @@ int main()
     bool is_master = false;
 #endif
 
+    // Initialize all stdio types
+    stdio_init_all();
+
+    // Print anything output during main() in bold
+    print_reset;
     print_bold;
 
     // Print out whether you're an AP or a station
-    printf("\n\n==================== NF %s v4 ====================\n\n",
+    printf("\n\n==================== NF %s v5 ====================\n\n",
            (is_master ? "Master" : "Node"));
+
+#ifdef USE_LAYOUT
+    print_yellow;
+
+    // Initialize the connectivity array
+    init_layout();
+
+    if (is_master) {
+        // Print out the network adjacency list
+        print_adj_list(-1);
+    }
+
+    print_white;
+#endif
 
     // Initialize this node
     self = new_node(is_master);
@@ -731,6 +754,7 @@ int main()
     // Start protothreads
     printf("Starting Protothreads on Core 0!\n\n");
 
+    // Reset to normal print colors
     print_reset;
 
     pt_add_thread(protothread_udp_send);

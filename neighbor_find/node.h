@@ -2,16 +2,21 @@
 #define NODE_H
 
 // Local
+#include "layout.h"
 #include "network_opts.h"
 
 // Default node ID numbers
-#define MASTER_ID  1
-#define DEFAULT_ID 0
+#define MASTER_ID  0
+#define DEFAULT_ID -1
 
 // Node struct
 typedef struct node {
     int ID;        // ID number
     int parent_ID; // Parent node ID number
+
+#ifdef USE_LAYOUT
+    int physical_ID; // Physical ID number
+#endif
 
     unsigned int counter; // Count number of packets sent
 

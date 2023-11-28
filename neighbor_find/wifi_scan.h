@@ -15,8 +15,8 @@ extern char scan_result[SSID_LEN];
 
 // Non-ID scan targets
 enum {
-    RUN_SCAN  = -1,
-    ENABLE_AP = 0
+    RUN_SCAN  = -2,
+    ENABLE_AP = -1
 };
 
 // Scan for picow_<ID> and pidog_<hex ID> networks, returns 0 on success. Places

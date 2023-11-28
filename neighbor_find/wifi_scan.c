@@ -10,6 +10,7 @@
 #include "pico/stdlib.h"
 
 // Local
+#include "layout.h"
 #include "node.h"
 #include "wifi_scan.h"
 
@@ -21,6 +22,7 @@ char scan_result[SSID_LEN];
 int num_unique_results = 0;
 uint64_t unique_results[MAX_NODES];
 
+// Returns true if the specified ID has not been encountered during this scan
 bool id_is_not_a_repeat(uint64_t id)
 {
     for (int i = 0; i < num_unique_results; i++) {
@@ -37,26 +39,38 @@ bool id_is_not_a_repeat(uint64_t id)
 static int scan_callback(void* env, const cyw43_ev_scan_result_t* result)
 {
     if (result) {
-        char header[10] = "";
-
         // Get first 5 characters of the SSID
-        // *header = '\0';
+        char header[10] = "";
         snprintf(header, 6, "%s", result->ssid);
 
+        // Set flags
         bool result_is_pidog = (strcmp(header, "pidog") == 0);
         bool result_is_picow = (strcmp(header, "picow") == 0);
+        bool is_visible      = true;
 
         if (result_is_pidog || result_is_picow) {
             // Create a token buffer (strtok is destructive)
             char tbuf[SSID_LEN];
-            sprintf(tbuf, "%s", result->ssid);
+            snprintf(tbuf, SSID_LEN, "%s", result->ssid);
 
-            // Separate the ID number from the SSID: picow_<ID>
+            // Separate the header
             char* token;
             token = strtok(tbuf, "_");
+
+#ifdef USE_LAYOUT
+            // Parse the extra physical ID out of the middle
+            token              = strtok(NULL, "_");
+            int result_phys_ID = atoi(token);
+
+            // Use the network connections list to determine if this node is
+            // actually visible
+            is_visible = conn_array[self.physical_ID][result_phys_ID];
+#endif
+
+            // Get the ID - <ID> if picow_<ID> / <hex ID> if pidog_<hex ID>
             token = strtok(NULL, "_");
 
-            if (result_is_pidog) {
+            if (result_is_pidog && is_visible) {
                 // Convert the hexadecimal ID to a uint64_t
                 uint64_t id = strtoull(token, NULL, 16);
 
@@ -68,11 +82,11 @@ static int scan_callback(void* env, const cyw43_ev_scan_result_t* result)
                     // Write SSID to scan_result
                     snprintf(scan_result, SSID_LEN, "%s", result->ssid);
 
-                    printf("\tssid: %-25s rssi: %4d\t<-- Uninitialized node\n",
-                           result->ssid, result->rssi);
+                    printf("\tssid: %-*s rssi: %4d  <-- Uninitialized node\n",
+                           SSID_LEN, result->ssid, result->rssi);
                 }
 
-            } else if (result_is_picow) {
+            } else if (result_is_picow && is_visible) {
                 // Convert the decimal ID to an integer
                 int id = atoi(token);
 
@@ -81,12 +95,18 @@ static int scan_callback(void* env, const cyw43_ev_scan_result_t* result)
                     unique_results[num_unique_results] = id;
                     num_unique_results++;
 
-                    printf("\tssid: %-25s rssi: %4d\t<-- ID = %d\n",
+                    printf("\tssid: %-*s rssi: %4d  <-- ID = %d\n", SSID_LEN,
                            result->ssid, result->rssi, id);
                 }
 
                 // Mark as neighbor
                 self.ID_is_nbr[id] = true;
+
+#ifdef USE_LAYOUT
+                // Store the physical ID corresponding to the ID assigned by the
+                // neighbor finding process
+                ID_to_phys_ID[id] = result_phys_ID;
+#endif
             }
         }
     }
@@ -128,15 +148,16 @@ int scan_wifi()
         // Block until scan is complete
     }
 
-    // Mark whether any uninitialized nodes were found during the scan
+    // Mark whether any pidogs (uninitialized nodes) were found
     if (strcmp(scan_result, NO_UNINITIALIZED_NBRS) == 0) {
         pidogs_found = false;
     } else {
         pidogs_found = true;
     };
 
+    // Print the last pidog found
     printf("\t%*c...\n", 4, ' ');
-    printf("\tscan result: %-25s\n", scan_result);
+    printf("\tscan result: %-30s\n", scan_result);
 
     return 0;
 }

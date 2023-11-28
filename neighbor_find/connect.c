@@ -17,6 +17,7 @@
 
 // Local
 #include "connect.h"
+#include "layout.h"
 #include "node.h"
 
 int access_point = true;
@@ -39,6 +40,31 @@ TCP_SERVER_T* state;
 ip4_addr_t mask;
 dhcp_server_t dhcp_server;
 
+#ifdef USE_LAYOUT
+
+void generate_picow_ssid(char* buf, int picow_ID)
+{
+    // SSID = picow_<physical_ID>_<ID>
+
+    if (picow_ID == self.ID) {
+        snprintf(buf, SSID_LEN, "picow_%d_%d", self.physical_ID, self.ID);
+    } else {
+        // Get the neighbor's physical ID (stored from the scan)
+        snprintf(buf, SSID_LEN, "picow_%d_%d", ID_to_phys_ID[picow_ID],
+                 picow_ID);
+    }
+}
+
+#else
+
+void generate_picow_ssid(char* buf, int picow_ID)
+{
+    // picow_<ID>
+    snprintf(buf, SSID_LEN, "picow_%d", picow_ID);
+}
+
+#endif
+
 int boot_ap()
 {
     // Allocate TCP server state
@@ -55,7 +81,7 @@ int boot_ap()
     cyw43_arch_enable_ap_mode(self.wifi_ssid, WIFI_PASSWORD,
                               CYW43_AUTH_WPA2_AES_PSK);
     printf("Access point mode enabled!\n");
-    printf("\tssid = %s\n", self.wifi_ssid);
+    printf("\tssid         = %s\n", self.wifi_ssid);
 
     // The variable 'state' is a pointer to a TCP_SERVER_T struct
     // Set up the access point IP address and mask
@@ -82,7 +108,7 @@ int boot_ap()
     // printf("My IPv4 addr = %s\n", ip4addr_ntoa(&state->gw));
 
     // Print IP address (potentially better method)
-    printf("\tIPv4 addr: %s\n", ip4addr_ntoa(netif_ip4_addr(netif_list)));
+    printf("\tMy IPv4 addr = %s\n", ip4addr_ntoa(netif_ip4_addr(netif_list)));
 
     access_point = true;
 
@@ -145,15 +171,15 @@ int connect_to_network(char* ssid)
         return 1;
     } else {
         printf("connected!\n");
-        printf("\tssid     = %-25s\n", ssid);
-        printf("\tpassword = %s\n", WIFI_PASSWORD);
+        printf("\tssid         = %s\n", ssid);
+        printf("\tpassword     = %s\n", WIFI_PASSWORD);
 
         // Configure target IP address
         snprintf(self.ip_addr, IP_ADDR_LEN, "%s", STATION_ADDR);
         snprintf(dest_addr_str, IP_ADDR_LEN, "%s", AP_ADDR);
 
         // Print address assigned by DHCP
-        printf("\tSet IPv4 addr: %s (DHCP) --> ",
+        printf("\tMy IPv4 addr = %s (DHCP) --> ",
                ip4addr_ntoa(netif_ip4_addr(netif_list)));
 
         // Set local address, override the address assigned by DHCP
