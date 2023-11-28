@@ -93,7 +93,25 @@ void init_neighbors()
     }
 }
 
-void calculate_distance_vector();
+void calculate_distance_vector()
+{
+    // TODO
+}
+
+void str_to_dv(node_t* n, int nbr_ID, char* dv)
+{
+    // TODO
+}
+
+void dv_to_str(node_t* n, int nbr_ID)
+{
+    // TODO
+}
+
+void print_distance_vector(int dv[])
+{
+    // TODO
+}
 
 void print_neighbors()
 {

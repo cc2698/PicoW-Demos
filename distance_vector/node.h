@@ -57,6 +57,15 @@ void init_neighbors();
 // Recalculate distance vector using neighbors
 void calculate_distance_vector();
 
+// Convert a string to a distance vector, and store it as the distance vector of
+// neighbor <nbr_ID>
+void str_to_dv(node_t* n, int nbr_ID, char* dv_str);
+
+// Convert a distance vector to a string, use poisoned reverse with <nbr_ID>
+void dv_to_str(int dv[], int nbr_ID);
+
+void print_distance_vector(int dv[]);
+
 // Print results of neighbor search
 void print_neighbors();
 
