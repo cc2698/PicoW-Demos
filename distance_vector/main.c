@@ -682,7 +682,7 @@ int main()
     print_bold;
 
     // Print out whether you're an AP or a station
-    printf("\n\n==================== NF %s v5 ====================\n\n",
+    printf("\n\n==================== DV Routing %s v5 ====================\n\n",
            (is_master ? "Master" : "Node"));
 
 #ifdef USE_LAYOUT
