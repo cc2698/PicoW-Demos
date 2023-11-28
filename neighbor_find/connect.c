@@ -45,7 +45,6 @@ dhcp_server_t dhcp_server;
 void generate_picow_ssid(char* buf, int picow_ID)
 {
     // SSID = picow_<physical_ID>_<ID>
-
     if (picow_ID == self.ID) {
         snprintf(buf, SSID_LEN, "picow_%d_%d", self.physical_ID, self.ID);
     } else {
@@ -59,7 +58,7 @@ void generate_picow_ssid(char* buf, int picow_ID)
 
 void generate_picow_ssid(char* buf, int picow_ID)
 {
-    // picow_<ID>
+    // SSID = picow_<ID>
     snprintf(buf, SSID_LEN, "picow_%d", picow_ID);
 }
 
@@ -121,14 +120,13 @@ void shutdown_ap()
 
     // Disable access point
     cyw43_arch_disable_ap_mode();
+    access_point = false;
 
     // Disable the DHCP server
     dhcp_server_deinit(&dhcp_server);
 
     // Free the TCP_SERVER state
     free(state);
-
-    access_point = false;
 
     printf("success!\n");
 }

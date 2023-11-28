@@ -253,9 +253,6 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             }
 
             if (target_ID >= 0) {
-                // // Connect to someone else's network
-                // snprintf(target_ssid, SSID_LEN, "picow_%d", target_ID);
-
                 // Connect to someone else's network
                 generate_picow_ssid(target_ssid, target_ID);
 
@@ -295,9 +292,6 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                     printf("initialized!\n");
                 }
 #endif
-                // // Turn on the access point
-                // snprintf(self.wifi_ssid, SSID_LEN, "picow_%d", self.ID);
-
                 // Turn on the access point
                 generate_picow_ssid(self.wifi_ssid, self.ID);
 
