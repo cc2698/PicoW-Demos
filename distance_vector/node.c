@@ -103,12 +103,12 @@ void str_to_dv(node_t* n, int nbr_ID, char* dv)
     // TODO
 }
 
-void dv_to_str(node_t* n, int nbr_ID)
+void dv_to_str(char* buf, int ID, int dv[], bool poison)
 {
     // TODO
 }
 
-void print_distance_vector(int dv[])
+void print_distance_vector(int ID, int dv[])
 {
     // TODO
 }

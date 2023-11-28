@@ -1,6 +1,9 @@
 #ifndef NODE_H
 #define NODE_H
 
+// C Libraries
+#include <stdbool.h>
+
 // Local
 #include "layout.h"
 #include "network_opts.h"
@@ -11,6 +14,13 @@
 
 // Value in the distance vector if no route is currently known
 #define NO_ROUTE MAX_NODES
+
+// Neighbor struct
+typedef struct nbr {
+    int ID;                         // ID number
+    int cost;                       // Cost of sending a packet to this neighbor
+    int distance_vector[MAX_NODES]; // My distance vector
+} nbr_t;
 
 // Node struct
 typedef struct node {
@@ -38,13 +48,6 @@ typedef struct node {
 
 } node_t;
 
-// Neighbor struct
-typedef struct nbr {
-    int ID;                         // ID number
-    int cost;                       // Cost of sending a packet to this neighbor
-    int distance_vector[MAX_NODES]; // My distance vector
-} nbr_t;
-
 // Contains all of the properties of this node
 extern node_t self;
 
@@ -61,10 +64,12 @@ void calculate_distance_vector();
 // neighbor <nbr_ID>
 void str_to_dv(node_t* n, int nbr_ID, char* dv_str);
 
-// Convert a distance vector to a string, use poisoned reverse with <nbr_ID>
-void dv_to_str(int dv[], int nbr_ID);
+// Convert a distance vector to a string, if [poison == true] use poisoned
+// reverse
+void dv_to_str(char* buf, int ID, int dv[], bool poison);
 
-void print_distance_vector(int dv[]);
+// Print a distance vector
+void print_distance_vector(int ID, int dv[]);
 
 // Print results of neighbor search
 void print_neighbors();
