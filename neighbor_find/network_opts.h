@@ -2,7 +2,7 @@
 #define NETWORK_OPTS_H
 
 // Maximum number of nodes that can join the network
-#define MAX_NODES 4
+#define MAX_NODES 5
 
 // Max SSID length
 #define SSID_LEN 30

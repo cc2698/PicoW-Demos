@@ -53,14 +53,26 @@ int adj_list[MAX_NODES][MAX_NODES] = {
     {2, EOL}        // 3
 };
 
+#    elif LAYOUT == 4
+
+// Five nodes
+int adj_list[MAX_NODES][MAX_NODES] = {
+    {1, 4, EOL},    // 0
+    {0, 2, 3, EOL}, // 1
+    {1, EOL},       // 2
+    {1, EOL},       // 3
+    {0, EOL}        // 4
+};
+
 #    endif
 // =================================================
 
 char board_IDs[NUM_BOARDS][20] = {
-    "E6614864D32F7622", //
-    "E6614864D36FAF21", //
-    "E6614864D388AD21", //
-    "E6614864D3138C21"  //
+    "E6614864D32F7622", // 0
+    "E6614864D36FAF21", // 1
+    "E6614864D388AD21", // 2
+    "E6614864D3138C21", // 3
+    "E661410403492722"  // 4
 };
 
 int conn_array[MAX_NODES][MAX_NODES];

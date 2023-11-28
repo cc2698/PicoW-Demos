@@ -11,13 +11,13 @@
 #ifdef USE_LAYOUT
 
 // Which layout number to use
-#    define LAYOUT 0
+#    define LAYOUT 4
 
 // End of list indicator
 #    define EOL -1
 
 // Number of Pico-W boards that I own.
-#    define NUM_BOARDS 4
+#    define NUM_BOARDS 5
 
 // The list of unique board IDs of my Pico-Ws
 extern char board_IDs[NUM_BOARDS][20];
