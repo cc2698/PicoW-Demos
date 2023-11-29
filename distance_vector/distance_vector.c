@@ -120,12 +120,15 @@ void dv_to_str(char* buf, node_t* n, int recv_ID, int dv[], bool poison)
 // Print out a distance vector or a routing table
 void print_table(char* type, int ID, int values[])
 {
-    bool dv = (strcmp(type, "dv") == 0);
-    bool rt = (strcmp(type, "rt") == 0);
+    bool dv  = (strcmp(type, "dv") == 0);
+    bool edv = (strcmp(type, "edv") == 0);
+    bool rt  = (strcmp(type, "rt") == 0);
 
     // Title
     if (dv) {
-        printf("DISTANCE VECTOR: ID = %d\n", ID);
+        printf("MY DIST. VECTOR: ID = %d\n", ID);
+    } else if (edv) {
+        printf("ESTIM. DIST. VECTOR FOR: ID = %d\n", ID);
     } else if (rt) {
         printf("ROUTING TABLE: ID = %d\n", ID);
     } else {
@@ -147,7 +150,7 @@ void print_table(char* type, int ID, int values[])
     printf("---\n");
 
     // Values
-    if (dv) {
+    if (dv || edv) {
         printf("\t Distance | ", ID); // If distance vector, print distance
     } else if (rt) {
         printf("\t Next-hop | ", ID); // If routing table, print next-hop router
@@ -171,14 +174,17 @@ void print_dist_vector(node_t* n, int ID)
         // Print my own distance vector
         print_table("dv", ID, n->dist_vector);
     } else if (n->ID_is_nbr[ID]) {
-        printf("MY ID = %d, MY ESTIMATE OF %d'S DISTANCE VECTOR:\n", n->ID, ID);
+        printf("MY ID = %d ; ", n->ID);
 
         // Print estimate of a neighbor's distance vector
         nbr_t* nb = n->nbrs[ID];
-        print_table("dv", ID, nb->dist_vector);
+        print_table("edv", ID, nb->dist_vector);
     } else {
-        printf("ERROR: Node %d does not have node %d's distance vector.\n",
-               n->ID, ID);
+        print_red;
+        printf("ERROR: ");
+        print_reset;
+        printf("Node %d (me) does not have node %d's distance vector.\n", n->ID,
+               ID);
     }
 }
 

@@ -324,12 +324,10 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             print_neighbors();
 
             // Print distance vector and routing table
-            print_dist_vector(&self, self.ID);
-            print_routing_table(self.ID, self.routing_table);
-
-            for (int i = 1; i < MAX_NODES; i++) {
+            for (int i = 0; i < MAX_NODES; i++) {
                 print_dist_vector(&self, i);
             }
+            print_routing_table(self.ID, self.routing_table);
 
 #if true
             // Print the distance vector that you'd send to your parent node
