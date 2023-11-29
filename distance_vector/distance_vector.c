@@ -165,10 +165,21 @@ void print_table(char* type, int ID, int values[])
     printf("\n\n");
 }
 
-void print_dist_vector(int ID, int dv[])
+void print_dist_vector(node_t* n, int ID)
 {
-    // Set type = "dv"
-    print_table("dv", ID, dv);
+    if (ID == n->ID) {
+        // Print my own distance vector
+        print_table("dv", ID, n->dist_vector);
+    } else if (n->ID_is_nbr[ID]) {
+        printf("MY ID = %d, MY ESTIMATE OF %d'S DISTANCE VECTOR:\n", n->ID, ID);
+
+        // Print estimate of a neighbor's distance vector
+        nbr_t* nb = n->nbrs[ID];
+        print_table("dv", ID, nb->dist_vector);
+    } else {
+        printf("ERROR: Node %d does not have node %d's distance vector.\n",
+               n->ID, ID);
+    }
 }
 
 void print_routing_table(int ID, int rt[])

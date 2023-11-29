@@ -23,7 +23,7 @@ void str_to_dv(node_t* n, int nbr_ID, char* dv_str);
 void dv_to_str(char* buf, node_t* n, int recv_ID, int dv[], bool poison);
 
 // Print a distance vector
-void print_dist_vector(int ID, int dv[]);
+void print_dist_vector(node_t* n, int ID);
 
 // Print a routing table
 void print_routing_table(int ID, int rt[]);
