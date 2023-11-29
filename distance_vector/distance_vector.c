@@ -11,34 +11,39 @@
 
 void init_dist_vector_routing(node_t* n)
 {
-    for (int i = 0; i < MAX_NODES; i++) {
-        if (n->ID_is_nbr[i]) {
+    for (int id = 0; id < MAX_NODES; id++) {
+        if (n->ID_is_nbr[id]) {
             // Calculate cost to this neighbor (Placeholder) (Can be changed
             // later to be a function of RSSI)
             int nb_cost = DEFAULT_COST;
 
             // Set distance to neighbor as 1
-            n->distance_vector[i] = nb_cost;
+            n->dist_vector[id] = nb_cost;
 
             // Next-hop node for a neighbor is itself
-            n->routing_table[i] = i;
+            n->routing_table[id] = id;
 
             // Add a new neighbor
             nbr_t* nb = malloc(sizeof(struct nbr));
-            nb->ID    = i;
+            nb->ID    = id;
             nb->cost  = nb_cost;
             for (int j = 0; j < MAX_NODES; j++) {
-                nb->distance_vector[j] = DIST_IF_NO_ROUTE;
+                nb->dist_vector[j] = DIST_IF_NO_ROUTE;
             }
-            n->nbrs[n->num_nbrs] = nb;
+
+            // Store nbr_t pointer in nbrs[id]
+            n->nbrs[id] = nb;
+
+            // Increment the number of neighbors
+            n->num_nbrs++;
         }
     }
 
     // Set distance to self as 0
-    n->distance_vector[n->ID] = 0;
+    n->dist_vector[n->ID] = 0;
 }
 
-void update_distance_vector(node_t* n, int nbr_ID)
+void update_dist_vector(node_t* n, int nbr_ID)
 {
     // TODO
 }
@@ -48,9 +53,33 @@ void str_to_dv(node_t* n, int nbr_ID, char* dv)
     // TODO
 }
 
-void dv_to_str(char* buf, int ID, int dv[], bool poison)
+void dv_to_str(char* buf, node_t* n, int recv_ID, int dv[], bool poison)
 {
-    // TODO
+    char dv_str[3 * MAX_NODES];
+
+    // Index in the string where we are writing
+    int index = 0;
+
+    // Value of the distance vector to insert
+    int value;
+
+    // Check for poison reverse on the first entry, then write the first entry
+    // without a delimiter before it
+    value = (poison && n->routing_table[0] == recv_ID) ? POISON_DIST : dv[0];
+    index += snprintf(&dv_str[index], 3 * MAX_NODES - index, "%d", value);
+
+    for (int id = 1; id < MAX_NODES; id++) {
+        // If poisoned reverse is true and I route through [recv_ID] to get
+        // to this node, report distance as infinite (posion distance).
+        value =
+            (poison && n->routing_table[id] == recv_ID) ? POISON_DIST : dv[id];
+
+        // Write the rest of the entries with a '-' delimiter
+        index += snprintf(&dv_str[index], 3 * MAX_NODES - index, "-%d", value);
+    }
+
+    // Write to the buffer
+    snprintf(buf, 3 * MAX_NODES, "%s", dv_str);
 }
 
 // Print out a distance vector or a routing table
@@ -101,7 +130,7 @@ void print_table(char* type, int ID, int values[])
     printf("\n\n");
 }
 
-void print_distance_vector(int ID, int dv[])
+void print_dist_vector(int ID, int dv[])
 {
     print_table("dv", ID, dv);
 }

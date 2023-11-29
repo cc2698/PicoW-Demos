@@ -12,6 +12,7 @@
 
 // Routing algorithm values
 #define DIST_IF_NO_ROUTE MAX_NODES
+#define POISON_DIST      (DIST_IF_NO_ROUTE + 1)
 #define NO_ROUTE         -1
 #define DEFAULT_COST     1
 

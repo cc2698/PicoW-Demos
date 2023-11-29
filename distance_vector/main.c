@@ -168,6 +168,9 @@ static PT_THREAD(protothread_connect(struct pt* pt))
 
     static int connect_err;
 
+    // Buffer for storing strings for debugging (testing purposes only)
+    char test_buf[UDP_MSG_LEN_MAX];
+
     while (true) {
         PT_YIELD_UNTIL(pt, signal_connect_thread && ack_queue_empty);
 
@@ -299,7 +302,6 @@ static PT_THREAD(protothread_connect(struct pt* pt))
 #endif
                 // Turn on the access point
                 generate_picow_ssid(self.wifi_ssid, self.ID);
-
                 boot_ap();
 
                 connected_ID = ENABLE_AP;
@@ -321,8 +323,13 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             print_neighbors();
 
             // Print distance vector and routing table
-            print_distance_vector(self.ID, self.distance_vector);
+            print_dist_vector(self.ID, self.dist_vector);
             print_routing_table(self.ID, self.routing_table);
+
+            // Print the distance vector that you'd send to your parent node
+            dv_to_str(test_buf, &self, self.parent_ID, self.dist_vector, true);
+
+            printf("%s\n", test_buf);
         }
 
         PT_YIELD(pt);

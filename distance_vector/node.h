@@ -14,9 +14,9 @@
 
 // Neighbor struct
 typedef struct nbr {
-    int ID;                         // ID number
-    int cost;                       // Cost of sending a packet to this neighbor
-    int distance_vector[MAX_NODES]; // My distance vector
+    int ID;                     // ID number
+    int cost;                   // Cost of sending a packet to this neighbor
+    int dist_vector[MAX_NODES]; // Estimate of neighbor's distance vector
     bool up_to_date[MAX_NODES]; // Does this neighbor have the most up-to-date
                                 // copy of my distance vector?
 } nbr_t;
@@ -40,10 +40,11 @@ typedef struct node {
 
     int ID_is_nbr[MAX_NODES]; // Hashmap (<ID>, <bool>), true if ID is neighbor
     nbr_t* nbrs[MAX_NODES];   // List of my neighbors
-    int num_nbrs;             // Number of entries in the nbrs[] array
+    int ID_to_nbrs_index[MAX_NODES]; // Hashmap (<ID>, <index in nbrs[]>)
+    int num_nbrs;                    // Number of entries in the nbrs[] array
 
-    int distance_vector[MAX_NODES]; // My distance vector
-    int routing_table[MAX_NODES];   // My routing table
+    int dist_vector[MAX_NODES];   // My distance vector
+    int routing_table[MAX_NODES]; // My routing table
 
 } node_t;
 

@@ -69,11 +69,12 @@ node_t new_node(int is_master)
         n.ID_is_nbr[i] = false;
         n.nbrs[i]      = NULL;
     }
+    n.num_nbrs = 0;
 
     // Initialize with empty DV and routing table
     for (int i = 0; i < MAX_NODES; i++) {
-        n.distance_vector[i] = DIST_IF_NO_ROUTE;
-        n.routing_table[i]   = NO_ROUTE;
+        n.dist_vector[i]   = DIST_IF_NO_ROUTE;
+        n.routing_table[i] = NO_ROUTE;
     }
 
     return n;
