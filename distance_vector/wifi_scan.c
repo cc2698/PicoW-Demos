@@ -95,7 +95,7 @@ static int scan_callback(void* env, const cyw43_ev_scan_result_t* result)
                     unique_results[num_unique_results] = id;
                     num_unique_results++;
 
-                    printf("\tssid: %-*s rssi: %4d  <-- ID = %d\n", SSID_LEN,
+                    printf("\tssid: %-*s rssi: %4d dB  <-- ID = %d\n", SSID_LEN,
                            result->ssid, result->rssi, id);
                 }
 
