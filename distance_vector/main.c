@@ -326,10 +326,13 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             print_dist_vector(self.ID, self.dist_vector);
             print_routing_table(self.ID, self.routing_table);
 
+#if true
             // Print the distance vector that you'd send to your parent node
             dv_to_str(test_buf, &self, self.parent_ID, self.dist_vector, true);
-
             printf("%s\n", test_buf);
+
+            // Print above string turned back into a distance vector
+#endif
         }
 
         PT_YIELD(pt);
@@ -622,6 +625,9 @@ static PT_THREAD(protothread_serial(struct pt* pt))
 {
     PT_BEGIN(pt);
 
+    // Buffer for composing messages
+    char msg_buffer[UDP_MSG_LEN_MAX];
+
     while (true) {
         // Yielding here is not strictly necessary but it gives a little bit
         // of slack for the async processes so that the output is in the
@@ -646,6 +652,10 @@ static PT_THREAD(protothread_serial(struct pt* pt))
             // Print list of neighbors
             print_neighbors();
 
+        } else if (strcmp(pt_serial_in_buffer, "dv") == 0) {
+            // Load my distance vector into the send queue
+            send_queue = new_packet("dv", target_ID, self.ID, self.ip_addr,
+                                    self.counter, time_us_64(), "1");
         } else {
             send_queue =
                 new_packet("data", target_ID, self.ID, self.ip_addr,

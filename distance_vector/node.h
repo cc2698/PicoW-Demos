@@ -17,8 +17,12 @@ typedef struct nbr {
     int ID;                     // ID number
     int cost;                   // Cost of sending a packet to this neighbor
     int dist_vector[MAX_NODES]; // Estimate of neighbor's distance vector
-    bool up_to_date[MAX_NODES]; // Does this neighbor have the most up-to-date
-                                // copy of my distance vector?
+
+    bool up_to_date; // Does this neighbor have the most
+                     // up-to-date copy of my distance vector?
+
+    bool new_dv; // Have I stored a new DV for this node that I haven't looked
+                 // at yet?
 } nbr_t;
 
 // Node struct

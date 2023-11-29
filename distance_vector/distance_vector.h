@@ -4,6 +4,9 @@
 // Local
 #include "node.h"
 
+// Maximum length a distance vector could be when represented as a string
+#define DV_MAX_LEN (3 * MAX_NODES)
+
 // Initialize distance vector routing. Setup distance vectors for node_t [n] and
 // all of its neighbors.
 void init_dist_vector_routing(node_t* n);
