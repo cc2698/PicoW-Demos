@@ -57,6 +57,7 @@ packet_t send_queue;
 static ip_addr_t dest_addr;
 static struct udp_pcb* udp_send_pcb;
 struct pt_sem new_udp_send_s;
+bool signal_send_thread = false;
 
 // UDP ack
 packet_t ack_queue;
@@ -229,7 +230,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                         send_queue = token_packet;
 
                         // Signal send thread
-                        PT_SEM_SAFE_SIGNAL(pt, &new_udp_send_s);
+                        signal_send_thread = true;
                     }
                 } else {
                     // Flag that neighbors have been recorded
@@ -281,7 +282,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                     send_queue = token_packet;
 
                     // Signal send thread
-                    PT_SEM_SAFE_SIGNAL(pt, &new_udp_send_s);
+                    signal_send_thread = true;
                 }
             }
         } else {
@@ -323,12 +324,17 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             print_neighbors();
 
             // Print distance vector and routing table
-            print_dist_vector(self.ID, self.dist_vector);
+            print_dist_vector(&self, self.ID);
             print_routing_table(self.ID, self.routing_table);
+
+            for (int i = 1; i < MAX_NODES; i++) {
+                print_dist_vector(&self, i);
+            }
 
 #if true
             // Print the distance vector that you'd send to your parent node
             dv_to_str(test_buf, &self, self.parent_ID, self.dist_vector, true);
+
             printf("%s\n", test_buf);
 
             // Print above string turned back into a distance vector
@@ -370,7 +376,10 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
 
     while (true) {
         // Wait until the buffer is written
-        PT_SEM_SAFE_WAIT(pt, &new_udp_send_s);
+        // PT_SEM_SAFE_WAIT(pt, &new_udp_send_s);
+
+        PT_YIELD_UNTIL(pt, signal_send_thread);
+        signal_send_thread = false;
 
         // Assign target pico IP address, string -> ip_addr_t
         ipaddr_aton(dest_addr_str, &dest_addr);
@@ -646,13 +655,16 @@ static PT_THREAD(protothread_serial(struct pt* pt))
                                     self.counter, time_us_64(), "1");
 
             // Signal waiting threads
-            PT_SEM_SAFE_SIGNAL(pt, &new_udp_send_s);
+            signal_send_thread = true;
 
         } else if (strcmp(pt_serial_in_buffer, "nbr") == 0) {
             // Print list of neighbors
             print_neighbors();
 
         } else if (strcmp(pt_serial_in_buffer, "dv") == 0) {
+            // Assuming I'm the master node, send my DV to node #1 as a test
+            dv_to_str(msg_buffer, &self, 1, self.dist_vector, true);
+
             // Load my distance vector into the send queue
             send_queue = new_packet("dv", target_ID, self.ID, self.ip_addr,
                                     self.counter, time_us_64(), "1");
@@ -662,7 +674,7 @@ static PT_THREAD(protothread_serial(struct pt* pt))
                            self.counter, time_us_64(), pt_serial_in_buffer);
 
             // Signal waiting threads
-            PT_SEM_SAFE_SIGNAL(pt, &new_udp_send_s);
+            signal_send_thread = true;
         }
     }
 
