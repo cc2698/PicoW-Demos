@@ -82,7 +82,7 @@ static int scan_callback(void* env, const cyw43_ev_scan_result_t* result)
                     // Write SSID to scan_result
                     snprintf(scan_result, SSID_LEN, "%s", result->ssid);
 
-                    printf("\tssid: %-*s rssi: %4d  <-- Uninitialized node\n",
+                    printf("\tssid: %-*s rssi: %4d dB  <-- New node\n",
                            SSID_LEN, result->ssid, result->rssi);
                 }
 

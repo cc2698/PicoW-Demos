@@ -702,7 +702,7 @@ int main()
 
     if (is_master) {
         // Print out the network adjacency list
-        print_adj_list(-1);
+        print_adj_list(DEFAULT_ID, true);
     }
 
     print_white;

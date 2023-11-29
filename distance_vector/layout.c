@@ -130,28 +130,43 @@ int init_layout()
     return 0;
 }
 
-void print_adj_list(int phys_ID)
+void print_adj_list(int phys_ID, bool full_list)
 {
     printf("\n");
 
-    // Print header
-    printf(" Phys. ID | Phys. Nbrs\n");
-    printf("----------|");
+    // Title
+    printf("NETWORK PHYS. ADJACENCY LIST\n");
+
+    // Header
+    printf("\t Phys. ID | Phys. Nbrs\n");
+
+    // Bar
+    printf("\t----------|");
     for (int i = 0; i < (4 + 3 * MAX_NODES + 1); i++) {
         printf("-");
     }
     printf("\n");
 
-    // Print entries
-    for (int i = 0; i < MAX_NODES && adj_list[i][0] != EOL; i++) {
-        if (i == phys_ID) {
-            printf(" --> %3d  |  [ ", i);
-        } else {
-            printf("     %3d  |  [ ", i);
-        }
+    // Entries
+    if (full_list) {
+        // Print the entire list out
+        for (int i = 0; i < MAX_NODES && adj_list[i][0] != EOL; i++) {
+            if (i == phys_ID) {
+                printf("\t --> %3d  |  [ ", i);
+            } else {
+                printf("\t     %3d  |  [ ", i);
+            }
 
-        for (int j = 0; adj_list[i][j] != EOL; j++) {
-            printf("%d ", adj_list[i][j]);
+            for (int j = 0; adj_list[i][j] != EOL; j++) {
+                printf("%d ", adj_list[i][j]);
+            }
+            printf("]\n");
+        }
+    } else {
+        printf("\t --> %3d  |  [ ", phys_ID);
+
+        for (int j = 0; adj_list[phys_ID][j] != EOL; j++) {
+            printf("%d ", adj_list[phys_ID][j]);
         }
         printf("]\n");
     }

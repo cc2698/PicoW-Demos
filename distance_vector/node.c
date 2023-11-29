@@ -126,7 +126,8 @@ void print_neighbors()
     }
     printf("]\n");
 
-    print_adj_list(self.physical_ID);
+    // Print the adjacency list, full list if this is the master node
+    print_adj_list(self.physical_ID, self.ID == MASTER_ID);
 
 #endif
 

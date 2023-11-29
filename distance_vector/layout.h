@@ -1,6 +1,9 @@
 #ifndef LAYOUT_H
 #define LAYOUT_H
 
+// C Libraries
+#include <stdbool.h>
+
 // Local
 #include "network_opts.h"
 
@@ -31,7 +34,7 @@ extern int ID_to_phys_ID[MAX_NODES];
 int init_layout();
 
 // Print the adjacency list
-void print_adj_list(int phys_ID);
+void print_adj_list(int phys_ID, bool full_list);
 
 #endif
 
