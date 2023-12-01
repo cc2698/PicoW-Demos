@@ -38,29 +38,16 @@ TCP_SERVER_T* state;
 ip4_addr_t mask;
 dhcp_server_t dhcp_server;
 
+void generate_picow_ssid(char* buf, int picow_ID)
+{
 #ifdef USE_LAYOUT
-
-void generate_picow_ssid(char* buf, int picow_ID)
-{
     // SSID = picow_<physical_ID>_<ID>
-    if (picow_ID == self.ID) {
-        snprintf(buf, SSID_LEN, "picow_%d_%d", self.physical_ID, self.ID);
-    } else {
-        // Get the neighbor's physical ID (stored from the scan)
-        snprintf(buf, SSID_LEN, "picow_%d_%d", ID_to_phys_ID[picow_ID],
-                 picow_ID);
-    }
-}
-
+    snprintf(buf, SSID_LEN, "picow_%d_%d", ID_to_phys_ID[picow_ID], picow_ID);
 #else
-
-void generate_picow_ssid(char* buf, int picow_ID)
-{
     // SSID = picow_<ID>
     snprintf(buf, SSID_LEN, "picow_%d", picow_ID);
-}
-
 #endif
+}
 
 int re_init_cyw43()
 {

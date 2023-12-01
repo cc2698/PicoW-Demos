@@ -47,7 +47,7 @@ node_t new_node(int is_master)
         }
     }
 
-    // Print physical ID number
+    // Register physical ID number
     printf("\tPhys ID   = %d\n", n.physical_ID);
 
     // Initialize SSID as pidog_<physical ID>_<hex ID>

@@ -503,6 +503,10 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
                 // Give myself an ID, increment the token
                 self.ID = token_id_number++;
 
+#ifdef USE_LAYOUT
+                ID_to_phys_ID[self.ID] = self.physical_ID;
+#endif
+
                 printf("%3d\n", self.ID);
 
                 printf("\tParent ID: %3d --> ", self.parent_ID);
