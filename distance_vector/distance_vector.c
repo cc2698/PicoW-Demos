@@ -126,13 +126,18 @@ void print_table(char* type, int ID, int values[])
 
     // Title
     if (dv) {
-        printf("MY DIST. VECTOR: ID = %d\n", ID);
+        printf("DIST. VECTOR for ID = %d  ", ID);
+        print_green;
+        printf("<-- ME\n");
+        print_reset;
     } else if (edv) {
-        printf("ESTIM. DIST. VECTOR FOR: ID = %d\n", ID);
+        printf("DIST. VECTOR for ID = %d\n", ID);
     } else if (rt) {
-        printf("ROUTING TABLE: ID = %d\n", ID);
+        printf("ROUTING TABLE for ID = %d\n", ID);
     } else {
+        print_red;
         printf("ERROR: Unknown table type.\n");
+        print_reset;
     }
 
     // Header
@@ -174,8 +179,6 @@ void print_dist_vector(node_t* n, int ID)
         // Print my own distance vector
         print_table("dv", ID, n->dist_vector);
     } else if (n->ID_is_nbr[ID]) {
-        printf("MY ID = %d ; ", n->ID);
-
         // Print estimate of a neighbor's distance vector
         nbr_t* nb = n->nbrs[ID];
         print_table("edv", ID, nb->dist_vector);
@@ -183,8 +186,8 @@ void print_dist_vector(node_t* n, int ID)
         print_red;
         printf("ERROR: ");
         print_reset;
-        printf("Node %d (me) does not have node %d's distance vector.\n", n->ID,
-               ID);
+        printf("Node %d (me) does not have node %d's distance vector.\n\n",
+               n->ID, ID);
     }
 }
 
