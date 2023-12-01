@@ -24,8 +24,6 @@ int access_point = true;
 
 char dest_addr_str[IP_ADDR_LEN] = "255.255.255.255";
 
-int connected_ID = 0;
-
 // Bruce Land's TCP server structure. Stores metadata for an access point
 // hosted by a Pico-W. This includes the IPv4 address.
 typedef struct TCP_SERVER_T_ {
@@ -63,6 +61,20 @@ void generate_picow_ssid(char* buf, int picow_ID)
 }
 
 #endif
+
+int re_init_cyw43()
+{
+    // Re-initialize Wifi chip
+    cyw43_arch_deinit();
+    printf("Initializing cyw43...");
+    if (cyw43_arch_init()) {
+        printf("failed to initialise.\n");
+        return 1;
+    }
+    printf("initialized!\n");
+
+    return 0;
+}
 
 int boot_ap()
 {

@@ -27,6 +27,9 @@ extern int connected_ID;
 // Generate a picow SSID
 void generate_picow_ssid(char* buf, int picow_ID);
 
+// Re-initialize the cyw43
+int re_init_cyw43();
+
 // Boot up the access point, returns 0 on success.
 int boot_ap();
 

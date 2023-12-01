@@ -75,7 +75,8 @@ struct pt_sem new_udp_ack_s;
 bool signal_connect_thread = false;
 
 // ID to target during connection. Can take special values
-int target_ID = ENABLE_AP;
+int connected_ID = ENABLE_AP;
+int target_ID    = ENABLE_AP;
 
 // SSID of the target access point
 char target_ssid[SSID_LEN];
@@ -151,8 +152,8 @@ int udp_recv_callback_init(void)
 
 // Re-initialize the Wifi chip when switching between AP and station modes.
 // Limited amounts of testing suggests that this isn't necessary but I'm leaving
-// it here in just in case I need to turn it back on.
-#define RE_INIT_CYW43_BETWEEN_MODES false
+// the option here in just in case you need to turn it back on.
+#define RE_INIT_CYW43_BTW_MODES false
 
 // =================================================
 // Connection managing thread
@@ -173,141 +174,113 @@ static PT_THREAD(protothread_connect(struct pt* pt))
     char test_buf[UDP_MSG_LEN_MAX];
 
     while (true) {
-        PT_YIELD_UNTIL(pt, signal_connect_thread && ack_queue_empty);
 
-        // Reset the signal flag
+        // Wait until signalled AND there are no pending ACKs
+        PT_YIELD_UNTIL(pt, signal_connect_thread && ack_queue_empty);
         signal_connect_thread = false;
 
         // Reset error code
         connect_err = 0;
 
-        if (access_point) {
-            // Disable access point
-            shutdown_ap();
+        /*
+         *  Toggle connection state
+         */
 
-#if RE_INIT_CYW43_BETWEEN_MODES
-            // Re-initialize Wifi chip
-            cyw43_arch_deinit();
-            printf("Initializing cyw43...");
-            if (cyw43_arch_init()) {
-                printf("failed to initialise.\n");
-                return 1;
-            } else {
-                printf("initialized!\n");
-            }
+        if (target_ID == NF_SCAN || target_ID >= CONNECT_TO_AP) {
+            // Set mode to station mode
+            if (access_point) {
+                shutdown_ap();
+
+#if RE_INIT_CYW43_BTW_MODES
+                re_init_cyw43();
 #endif
 
-            // Enable station
-            boot_station();
+                // Enable station mode
+                boot_station();
 
-            // Set dest addr to the access point
-            snprintf(dest_addr_str, IP_ADDR_LEN, "%s", AP_ADDR);
-
-            if (target_ID == RUN_SCAN) {
-                printf("Waiting for nearby APs to boot:\n\t");
-                sleep_ms_progress_bar(2000, 30);
-
-                // Scan for targets
-                scan_wifi();
-
-                if (pidogs_found) {
-                    // If pidogs found, copy the result into target_ssid
-                    snprintf(target_ssid, SSID_LEN, "%s", scan_result);
-
-                    // Try to connect to wifi
-                    connect_err = connect_to_network(target_ssid);
-
-                    if (connect_err == 0) {
-                        // TODO: Mark as child node
-
-                        // Compose token to send
-                        snprintf(msg_buf, TOK_LEN, "%d", token_id_number);
-                        token_packet =
-                            new_packet("token", -1, self.ID, self.ip_addr,
-                                       self.counter, time_us_64(), msg_buf);
-
-                        // Enqueue packet (or is this done by recv thread?)
-                        send_queue = token_packet;
-
-                        // Signal send thread
-                        signal_send_thread = true;
-                    }
-                } else {
-                    // Flag that neighbors have been recorded
-                    if (!self.knows_nbrs) {
-                        self.knows_nbrs = true;
-
-                        init_dist_vector_routing(&self);
-                    }
-
-                    if (self.ID == MASTER_ID) {
-                        // Master node has received token back, and has no
-                        // uninitialized neighbors.
-
-                        // (Placeholder) Signal the connect thread to turn
-                        // the AP on one more time.
-                        signal_connect_thread = true;
-                        target_ID             = ENABLE_AP;
-                    } else {
-                        // If node is not the master node, hand the token
-                        // back to the parent node
-                        target_ID = self.parent_ID;
-
-                        print_green;
-                        printf("\nNO UNINITIALIZED NEIGHBORS, SEND TOKEN "
-                               "BACK TO PARENT NODE\n\n");
-                        print_reset;
-                    }
-                }
+                // Set dest addr to the access point
+                snprintf(dest_addr_str, IP_ADDR_LEN, "%s", AP_ADDR);
             }
-
-            if (target_ID >= 0) {
-                // Connect to someone else's network
-                generate_picow_ssid(target_ssid, target_ID);
-
-                // Try to connect to wifi
-                connect_err = connect_to_network(target_ssid);
-
-                if (connect_err == 0) {
-                    // If successful, change the connected_id number
-                    connected_ID = target_ID;
-
-                    // Compose token to send
-                    snprintf(msg_buf, TOK_LEN, "%d", token_id_number);
-                    token_packet =
-                        new_packet("token", target_ID, self.ID, self.ip_addr,
-                                   self.counter, time_us_64(), msg_buf);
-
-                    // Enqueue packet (or is this done by recv thread?)
-                    send_queue = token_packet;
-
-                    // Signal send thread
-                    signal_send_thread = true;
-                }
-            }
-        } else {
-            if (target_ID == ENABLE_AP) {
+        } else if (target_ID == ENABLE_AP) {
+            if (!access_point) {
                 // Disable station
                 shutdown_station();
 
-#if RE_INIT_CYW43_BETWEEN_MODES
-                // Re-initialize Wifi chip
-                cyw43_arch_deinit();
-                printf("Initializing cyw43...");
-                if (cyw43_arch_init()) {
-                    printf("failed to initialise.\n");
-                    return 1;
-                } else {
-                    printf("initialized!\n");
-                }
+#if RE_INIT_CYW43_BTW_MODES
+                re_init_cyw43();
 #endif
                 // Turn on the access point
                 generate_picow_ssid(self.wifi_ssid, self.ID);
-                boot_ap();
 
-                connected_ID = ENABLE_AP;
+                // If the AP successfully booted, set connected_ID
+                if (boot_ap() == 0) {
+                    connected_ID = target_ID;
+                }
             }
         }
+
+        /*
+         *  Perform scan or connect behavior
+         */
+
+        if (target_ID == NF_SCAN) {
+            // Give time for whoever sent you the token to boot back up
+            printf("Waiting for nearby APs to boot:\n\t");
+            sleep_ms_progress_bar(2000, 30);
+
+            // Scan for targets
+            scan_wifi();
+
+            if (pidogs_found) {
+                // Copy the result into target_ssid
+                snprintf(target_ssid, SSID_LEN, "%s", scan_result);
+
+                // Try to connect to wifi
+                connect_err = connect_to_network(target_ssid);
+            } else {
+                // Flag that neighbors have been recorded
+                if (!self.knows_nbrs) {
+                    self.knows_nbrs = true;
+
+                    init_dist_vector_routing(&self);
+                }
+
+                if (self.ID == MASTER_ID) {
+                    // Master node has received token back, and has no
+                    // uninitialized neighbors.
+                    target_ID             = ENABLE_AP;
+                    signal_connect_thread = true;
+
+                    // (Placeholder) Dequeue the token from the send thread
+                    signal_send_thread = false;
+                } else {
+                    // If node is not the master node, hand the token
+                    // back to the parent node
+                    target_ID             = self.parent_ID;
+                    signal_connect_thread = true;
+
+                    print_green;
+                    printf("\nNO UNINITIALIZED NEIGHBORS, SEND TOKEN BACK TO "
+                           "PARENT NODE\n\n");
+                    print_reset;
+                }
+            }
+        } else if (target_ID >= CONNECT_TO_AP) {
+            // Connect to someone else's network
+            generate_picow_ssid(target_ssid, target_ID);
+
+            // Try to connect to wifi
+            connect_err = connect_to_network(target_ssid);
+
+            // If successful, change the connected_id number
+            if (connect_err == 0) {
+                connected_ID = target_ID;
+            }
+        }
+
+        /*
+         *  Re-initialize UDP
+         */
 
         // Re-initialize UDP recv callback function
         udp_remove(udp_recv_pcb);
@@ -318,9 +291,8 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             printf("success!\n");
         }
 
-        // Print list of neighbors
+        // Print the results of neighbor finding
         if (self.knows_nbrs && access_point) {
-            // Print list of neighbors
             print_neighbors();
 
             // Print distance vector and routing table
@@ -376,7 +348,7 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
         // Wait until the buffer is written
         // PT_SEM_SAFE_WAIT(pt, &new_udp_send_s);
 
-        PT_YIELD_UNTIL(pt, signal_send_thread);
+        PT_YIELD_UNTIL(pt, signal_send_thread && !signal_connect_thread);
         signal_send_thread = false;
 
         // Assign target pico IP address, string -> ip_addr_t
@@ -445,8 +417,10 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
     // Incoming packet
     static packet_t recv_buf;
 
-    static char return_msg[10];
+    // Buffer for composing messages
+    static char msg_buf[UDP_MSG_LEN_MAX];
 
+    // Is the packet data, an ack, or a token
     static bool is_data, is_ack, is_token;
 
     while (true) {
@@ -480,6 +454,10 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         }
         print_reset;
 #endif
+
+        /*
+         *  Type-specific behavior:
+         */
 
         // If data or token was received, respond with ACK
         if (is_data || is_token) {
@@ -535,8 +513,14 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
                 printf("%3d\n", self.parent_ID);
             }
 
+            // Place incremented token in the send queue
+            snprintf(msg_buf, TOK_LEN, "%d", token_id_number);
+            send_queue = new_packet("token", target_ID, self.ID, STATION_ADDR,
+                                    self.counter, time_us_64(), msg_buf);
+            signal_send_thread = true;
+
             // Signal connect thread to scan for neighbors
-            target_ID             = RUN_SCAN;
+            target_ID             = NF_SCAN;
             signal_connect_thread = true;
         }
 
@@ -718,7 +702,7 @@ int main()
     print_bold;
 
     // Print out whether you're an AP or a station
-    printf("\n\n==================== DV Routing %s v1 ====================\n\n",
+    printf("\n\n==================== DV Routing %s v2 ====================\n\n",
            (is_master ? "Master" : "Node"));
 
 #ifdef USE_LAYOUT

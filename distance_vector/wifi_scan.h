@@ -14,10 +14,11 @@ extern bool pidogs_found;
 extern char scan_result[SSID_LEN];
 
 // Non-ID scan targets
-enum {
-    RUN_SCAN  = -2,
-    ENABLE_AP = -1
-};
+typedef enum {
+    NF_SCAN       = -2,
+    ENABLE_AP     = -1,
+    CONNECT_TO_AP = 0
+} cstate_t;
 
 // Scan for picow_<ID> and pidog_<hex ID> networks, returns 0 on success. Places
 // the result of the scan in the [scan_result] variable.
