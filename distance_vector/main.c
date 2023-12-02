@@ -495,25 +495,20 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
             // Convert the token number into an integer
             token_id_number = atoi(recv_buf.msg);
 
-            // If I don't have an ID yet, give myself one
             if (self.ID == DEFAULT_ID) {
+                // Give myself an ID, increment the token
                 printf("Assigning myself an ID number:\n");
                 printf("\tMy ID:     %3d --> ", self.ID);
-
-                // Give myself an ID, increment the token
                 self.ID = token_id_number++;
+                printf("%3d\n", self.ID);
 
 #ifdef USE_LAYOUT
                 ID_to_phys_ID[self.ID] = self.physical_ID;
 #endif
 
-                printf("%3d\n", self.ID);
-
-                printf("\tParent ID: %3d --> ", self.parent_ID);
-
                 // Parent node is whoever gave you the token
+                printf("\tParent ID: %3d --> ", self.parent_ID);
                 self.parent_ID = recv_buf.src_id;
-
                 printf("%3d\n", self.parent_ID);
             }
 
