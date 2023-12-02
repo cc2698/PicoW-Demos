@@ -63,7 +63,7 @@ void init_dist_vector_routing(node_t* n)
     n->dist_vector[n->ID] = 0;
 }
 
-void update_dist_vector_by_nbr_id(node_t* n, int nbr_ID)
+bool update_dist_vector_by_nbr_id(node_t* n, int nbr_ID)
 {
     // Break out of the function if nbr_ID is not actually a neighbor
     if (n->nbrs[nbr_ID] == NULL) {
@@ -71,7 +71,7 @@ void update_dist_vector_by_nbr_id(node_t* n, int nbr_ID)
         printf("ERROR: ");
         print_reset;
         printf("Node %d is not a neighbor.\n", nbr_ID);
-        return;
+        return false;
     }
 
     nbr_t* nb    = n->nbrs[nbr_ID];
@@ -106,6 +106,8 @@ void update_dist_vector_by_nbr_id(node_t* n, int nbr_ID)
     } else {
         printf("No changes to distance vector.\n");
     }
+
+    return updated;
 }
 
 void str_to_dv(node_t* n, int nbr_ID, char* dv)

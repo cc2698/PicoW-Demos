@@ -10,6 +10,7 @@
 #include "boards/pico_w.h"
 #include "pico/cyw43_arch.h"
 #include "pico/multicore.h"
+#include "pico/rand.h"
 #include "pico/stdlib.h"
 
 // Hardware
@@ -155,14 +156,60 @@ phase_t phase = DO_NOTHING;
  *	THREADS
  */
 
+#define COOLDOWN_USEC_MIN (20 * 1e6)
+#define COOLDOWN_USEC_MAX (30 * 1e6)
+
+uint64_t next_scan;
+
+uint64_t rand_uint64(uint64_t min, uint64_t max)
+{
+    float rand = (float) (get_rand_32()) / UINT32_MAX;
+    return (uint64_t) (min + (max - min) * rand);
+}
+
+bool signal_route_thread = true;
+
 // =================================================
 // Routing thread
 // =================================================
-static PT_THREAD(protothread_connect(struct pt* pt))
+static PT_THREAD(protothread_route(struct pt* pt))
 {
     PT_BEGIN(pt);
 
+    // Destination ID of distance vector packet
+    static int dest_ID;
+
+    static char dv_msg_buf[UDP_MSG_LEN_MAX];
+
     while (true) {
+        PT_YIELD_UNTIL(pt, phase == DV_ROUTING && signal_route_thread
+                               && time_us_64() > next_scan && ack_queue_empty);
+        signal_route_thread = false;
+
+        scan_wifi(DV_ROUTE_SCAN);
+
+        if (routing_scan_result != NULL) {
+            dest_ID = routing_scan_result->ID;
+
+            // Send a distance vector as a test
+            dv_to_str(dv_msg_buf, &self, dest_ID, self.dist_vector, true);
+
+            // Load my distance vector into the send queue
+            send_queue = new_packet("dv", dest_ID, self.ID, self.ip_addr,
+                                    self.counter, time_us_64(), dv_msg_buf);
+            signal_send_thread = true;
+
+            // Signal for a reconnection
+            target_ID             = dest_ID;
+            signal_connect_thread = true;
+        } else {
+            // Stay in AP mode for a random number of microseconds
+            next_scan = rand_uint64(COOLDOWN_USEC_MIN, COOLDOWN_USEC_MAX);
+
+            // Signal for AP mode
+            target_ID             = ENABLE_AP;
+            signal_connect_thread = true;
+        }
 
         PT_YIELD(pt);
     }
@@ -291,9 +338,13 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             // Try to connect to wifi
             connect_err = connect_to_network(target_ssid);
 
-            // If successful, change the connected_id number
             if (connect_err == 0) {
+                // If successful, change the connected_id number
                 connected_ID = target_ID;
+            } else {
+                // If failed, go back to AP mode
+                target_ID             = ENABLE_AP;
+                signal_connect_thread = true;
             }
         }
 
@@ -440,6 +491,8 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
     // Buffer for composing messages
     static char msg_buf[UDP_MSG_LEN_MAX];
 
+    static bool dv_updated = false;
+
     while (true) {
         // Wait until the buffer is written
         PT_SEM_SAFE_WAIT(pt, &new_udp_recv_s);
@@ -510,6 +563,9 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
 
                 self.nbrs[recv_buf.src_id]->up_to_date   = true;
                 self.nbrs[recv_buf.src_id]->last_contact = time_us_64();
+
+                // If successfully sent a DV, try sending another one
+                signal_route_thread = true;
             }
 
             // Signal connect thread to re-enable AP mode
@@ -559,7 +615,16 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
             // Store the distance vector
             str_to_dv(&self, recv_buf.src_id, recv_buf.msg);
 
-            update_dist_vector_by_nbr_id(&self, recv_buf.src_id);
+            // Delay sending your DV out in case more people try to send you DVs
+            printf("Delaying next scan: (old) %.1f ", (float) next_scan / 1e6);
+            next_scan = time_us_64() + (10 * 1e6);
+            printf("--> %.1f (new)\n", (float) next_scan / 1e6);
+            printf("\tcurrent time = %.1f\n", (float) time_us_64() / 1e6);
+
+            dv_updated = update_dist_vector_by_nbr_id(&self, recv_buf.src_id);
+            if (dv_updated) {
+                signal_route_thread = true;
+            }
 
             print_dist_vector(&self, recv_buf.src_id);
             print_dist_vector(&self, self.ID);
@@ -865,6 +930,7 @@ int main()
     pt_add_thread(protothread_udp_ack);
     pt_add_thread(protothread_serial);
     pt_add_thread(protothread_connect);
+    pt_add_thread(protothread_route);
     pt_schedule_start;
 
     // De-initialize the cyw43 architecture.
