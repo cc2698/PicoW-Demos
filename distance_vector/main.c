@@ -634,8 +634,6 @@ static PT_THREAD(protothread_serial(struct pt* pt))
             // Load the token into the send queue
             send_queue = new_packet("token", target_ID, self.ID, self.ip_addr,
                                     self.counter, time_us_64(), "1");
-
-            // Signal waiting threads
             signal_send_thread = true;
 
         } else if (strcmp(pt_serial_in_buffer, "nbr") == 0) {
@@ -653,8 +651,6 @@ static PT_THREAD(protothread_serial(struct pt* pt))
             send_queue =
                 new_packet("data", target_ID, self.ID, self.ip_addr,
                            self.counter, time_us_64(), pt_serial_in_buffer);
-
-            // Signal waiting threads
             signal_send_thread = true;
         }
     }
@@ -762,7 +758,6 @@ int main()
     // The threads use semaphores to signal each other when buffers are
     // written. If a thread tries to aquire a semaphore that is unavailable,
     // it yields to the next thread in the scheduler.
-    PT_SEM_SAFE_INIT(&new_udp_send_s, 0);
     PT_SEM_SAFE_INIT(&new_udp_recv_s, 0);
     PT_SEM_SAFE_INIT(&new_udp_ack_s, 0);
 
