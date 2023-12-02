@@ -71,6 +71,9 @@ struct pt_sem new_udp_ack_s;
  *  WIFI CONNECT / DISCONNECT
  */
 
+// Time allowed for AP to boot back up
+#define AP_BOOT_TIME 1000
+
 // Signal protothread_connect that a new connection needs to be made
 bool signal_connect_thread = false;
 
@@ -80,13 +83,6 @@ int target_ID    = ENABLE_AP;
 
 // SSID of the target access point
 char target_ssid[SSID_LEN];
-
-/*
- *  NODE INITIALIZATION / NEIGHBOR FINDING
- */
-
-// The ID number specified by the token
-int token_id_number;
 
 /*
  *	UDP CALLBACK SETUP
@@ -195,7 +191,6 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                 re_init_cyw43();
 #endif
 
-                // Enable station mode
                 boot_station();
 
                 // Set dest addr to the access point
@@ -203,16 +198,16 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             }
         } else if (target_ID == ENABLE_AP) {
             if (!access_point) {
-                // Disable station
                 shutdown_station();
 
 #if RE_INIT_CYW43_BTW_MODES
                 re_init_cyw43();
 #endif
+
                 // Turn on the access point
                 generate_picow_ssid(self.wifi_ssid, self.ID);
 
-                // If the AP successfully booted, set connected_ID
+                // Only set connected_ID if the AP successfully booted
                 if (boot_ap() == 0) {
                     connected_ID = target_ID;
                 }
@@ -226,7 +221,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
         if (target_ID == NF_SCAN) {
             // Give time for whoever sent you the token to boot back up
             printf("Waiting for nearby APs to boot:\n\t");
-            sleep_ms_progress_bar(2000, 30);
+            sleep_ms_progress_bar(AP_BOOT_TIME, 30);
 
             // Scan for targets
             scan_wifi();
@@ -325,9 +320,7 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
     PT_BEGIN(pt);
 
     // Create a new UDP PCB
-    udp_send_pcb = udp_new();
-
-    // Assign port numbers
+    udp_send_pcb              = udp_new();
     udp_send_pcb->remote_port = UDP_PORT;
     udp_send_pcb->local_port  = UDP_PORT;
 
@@ -357,6 +350,9 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
         // Pop the head of the queue
         send_buf = send_queue;
 
+        // Set the return IP address of the packet
+        snprintf(send_buf.ip_addr, IP_ADDR_LEN, "%s", self.ip_addr);
+
         // Convert to string
         packet_to_str(buffer, send_buf);
 
@@ -382,9 +378,9 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
         printf("Destination IPv4 addr: %s\n", ip4addr_ntoa(&dest_addr));
 
         // Send packet
-        // cyw43_arch_lwip_begin();
+        cyw43_arch_lwip_begin();
         er = udp_sendto(udp_send_pcb, p, &dest_addr, UDP_PORT);
-        // cyw43_arch_lwip_end();
+        cyw43_arch_lwip_end();
 
         if (er == ERR_OK) {
             self.counter++;
@@ -417,11 +413,14 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
     // Incoming packet
     static packet_t recv_buf;
 
+    // Datatype of the received packet
+    static bool is_data, is_ack, is_token;
+
+    // The ID number specified by the token
+    int token_id_number;
+
     // Buffer for composing messages
     static char msg_buf[UDP_MSG_LEN_MAX];
-
-    // Is the packet data, an ack, or a token
-    static bool is_data, is_ack, is_token;
 
     while (true) {
         // Wait until the buffer is written
@@ -430,18 +429,14 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         // Convert the contents of the received packet to a packet_t
         recv_buf = str_to_packet(recv_data);
 
-        is_data = is_ack = is_token = false;
-        if (strcmp(recv_buf.packet_type, "data") == 0) {
-            is_data = true;
-        } else if (strcmp(recv_buf.packet_type, "ack") == 0) {
-            is_ack = true;
-        } else if (strcmp(recv_buf.packet_type, "token") == 0) {
-            is_token = true;
-        }
+        // Determine the packet type
+        is_data  = (strcmp(recv_buf.packet_type, "data") == 0);
+        is_ack   = (strcmp(recv_buf.packet_type, "ack") == 0);
+        is_token = (strcmp(recv_buf.packet_type, "token") == 0);
 
 #ifndef PRINT_ON_RECV
         if (strcmp(recv_buf.packet_type, "ack") == 0) {
-            printf("%3d", recv_buf.ack_num);
+            printf("Received ack for %3d", recv_buf.ack_num);
         }
 #else
         // Print formatted packet contents
@@ -460,8 +455,8 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
          */
 
         // If data or token was received, respond with ACK
-        if (is_data || is_token) {
-            // Assign return address and ACK number
+        if (!is_ack) {
+            // Assign return address
             strcpy(return_addr_str, recv_buf.ip_addr);
 
             // Write to the ack queue
@@ -474,13 +469,20 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
             ack_queue_empty = false;
         }
 
-        // Determine if ack'ing token
         if (is_ack) {
             if (strcmp(recv_buf.msg, "token") == 0) {
                 printf("Token has been ack'ed\n");
 
-                // Signal connect thread to re-enable AP mode
                 led_off();
+
+                // Signal connect thread to re-enable AP mode
+                target_ID             = ENABLE_AP;
+                signal_connect_thread = true;
+
+            } else if (strcmp(recv_buf.msg, "dv") == 0) {
+                printf("DV has been ack'ed\n");
+
+                // Signal connect thread to re-enable AP mode
                 target_ID             = ENABLE_AP;
                 signal_connect_thread = true;
             }
@@ -492,7 +494,6 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
 
             led_on();
 
-            // Convert the token number into an integer
             token_id_number = atoi(recv_buf.msg);
 
             if (self.ID == DEFAULT_ID) {
@@ -537,9 +538,7 @@ static PT_THREAD(protothread_udp_ack(struct pt* pt))
     PT_BEGIN(pt);
 
     // Create a new UDP PCB
-    udp_ack_pcb = udp_new();
-
-    // Assign port numbers
+    udp_ack_pcb              = udp_new();
     udp_ack_pcb->remote_port = UDP_PORT;
     udp_ack_pcb->local_port  = UDP_PORT;
 
@@ -588,9 +587,9 @@ static PT_THREAD(protothread_udp_ack(struct pt* pt))
 #endif
 
         // Send packet
-        // cyw43_arch_lwip_begin();
+        cyw43_arch_lwip_begin();
         er = udp_sendto(udp_ack_pcb, p, &return_addr, UDP_PORT);
-        // cyw43_arch_lwip_end();
+        cyw43_arch_lwip_end();
 
         // The thread protothread_connect waits on this flag
         ack_queue_empty = true;
@@ -646,7 +645,11 @@ static PT_THREAD(protothread_serial(struct pt* pt))
 
             // Load my distance vector into the send queue
             send_queue = new_packet("dv", target_ID, self.ID, self.ip_addr,
-                                    self.counter, time_us_64(), "1");
+                                    self.counter, time_us_64(), msg_buffer);
+            signal_send_thread = true;
+
+            target_ID             = 1;
+            signal_connect_thread = true;
         } else {
             send_queue =
                 new_packet("data", target_ID, self.ID, self.ip_addr,
@@ -720,7 +723,10 @@ int main()
     // Initialize Wifi chip
     printf("Initializing cyw43...");
     if (cyw43_arch_init()) {
-        printf("failed to initialise.\n");
+        print_red;
+        printf("failed.\n");
+        print_reset;
+
         return 1;
     } else {
         printf("initialized!\n");
@@ -730,27 +736,26 @@ int main()
         // If all Pico-Ws boot at the same time, this delay gives the other
         // nodes time to setup before the master tries to scan.
         printf("Waiting for nearby APs to boot:\n\t");
-        sleep_ms_progress_bar(2000, 30);
+        sleep_ms_progress_bar(AP_BOOT_TIME, 30);
 
-        // Enable station mode
         boot_station();
 
         // Perform a wifi scan, copy the result to target_ssid
         scan_wifi();
         snprintf(target_ssid, SSID_LEN, "%s", scan_result);
 
-        // Connect to the target
         connect_to_network(target_ssid);
 
     } else {
-        // Turn on the access point
         boot_ap();
     }
 
     // Initialize UDP recv callback function
     printf("Initializing recv callback...");
     if (udp_recv_callback_init()) {
-        printf("receive callback failed to initialize.");
+        print_red;
+        printf("failed.\n");
+        print_reset;
     } else {
         printf("success!\n");
     }
@@ -767,8 +772,6 @@ int main()
 
     // Start protothreads
     printf("Starting Protothreads on Core 0!\n\n");
-
-    // Reset to normal print colors
     print_reset;
 
     pt_add_thread(protothread_udp_send);
