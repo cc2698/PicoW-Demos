@@ -439,7 +439,8 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         is_dv    = (strcmp(recv_buf.packet_type, "dv") == 0);
 
 #ifndef PRINT_ON_RECV
-        if (strcmp(recv_buf.packet_type, "ack") == 0) {
+        // Print ack
+        if (is_ack) {
             printf("Received ack for %3d", recv_buf.ack_num);
         }
 #else
@@ -453,6 +454,17 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         }
         print_reset;
 #endif
+
+        // Forward the packet to the next hop router
+        if (is_data && recv_buf.dest_id != self.ID) {
+            send_queue         = recv_buf;
+            send_queue.src_id  = self.ID;
+            signal_send_thread = true;
+
+            // Request reconnection
+            target_ID             = self.routing_table[recv_buf.dest_id];
+            signal_connect_thread = true;
+        }
 
         /*
          *  Type-specific behavior:
@@ -539,10 +551,8 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
 
             update_dist_vector_by_nbr_id(&self, recv_buf.src_id);
 
-            // Print distance vector and routing table
-            for (int i = 0; i < MAX_NODES; i++) {
-                print_dist_vector(&self, i);
-            }
+            print_dist_vector(&self, recv_buf.src_id);
+            print_dist_vector(&self, self.ID);
 
             print_routing_table(self.ID, self.routing_table);
         }
@@ -678,12 +688,16 @@ static PT_THREAD(protothread_serial(struct pt* pt))
                 dv_to_str(msg_buffer, &self, dest_ID, self.dist_vector, true);
 
                 // Load my distance vector into the send queue
-                send_queue = new_packet("dv", target_ID, self.ID, self.ip_addr,
+                send_queue = new_packet("dv", dest_ID, self.ID, self.ip_addr,
                                         self.counter, time_us_64(), msg_buffer);
                 signal_send_thread = true;
 
                 // Signal for a reconnection
                 target_ID             = dest_ID;
+                signal_connect_thread = true;
+            } else {
+                // Signal for a reconnection
+                target_ID             = ENABLE_AP;
                 signal_connect_thread = true;
             }
         } else {
@@ -700,18 +714,22 @@ static PT_THREAD(protothread_serial(struct pt* pt))
                 dv_to_str(msg_buffer, &self, dest_ID, self.dist_vector, true);
 
                 // Load my distance vector into the send queue
-                send_queue = new_packet("dv", target_ID, self.ID, self.ip_addr,
+                send_queue = new_packet("dv", dest_ID, self.ID, self.ip_addr,
                                         self.counter, time_us_64(), msg_buffer);
                 signal_send_thread = true;
 
                 // Signal for a reconnection
-                target_ID             = dest_ID;
+                target_ID             = self.routing_table[dest_ID];
                 signal_connect_thread = true;
+
             } else {
-                send_queue =
-                    new_packet("data", target_ID, self.ID, self.ip_addr,
-                               self.counter, time_us_64(), msg_buffer);
+                send_queue = new_packet("data", dest_ID, self.ID, self.ip_addr,
+                                        self.counter, time_us_64(), msg_buffer);
                 signal_send_thread = true;
+
+                // Signal for a reconnection
+                target_ID             = self.routing_table[dest_ID];
+                signal_connect_thread = true;
             }
         }
     }
