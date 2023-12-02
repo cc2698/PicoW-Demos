@@ -490,21 +490,16 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
                 printf("Token has been ack'ed\n");
 
                 led_off();
-
-                // Signal connect thread to re-enable AP mode
-                target_ID             = ENABLE_AP;
-                signal_connect_thread = true;
-
             } else if (strcmp(recv_buf.msg, "dv") == 0) {
                 printf("DV has been ack'ed\n");
 
                 self.nbrs[recv_buf.src_id]->up_to_date   = true;
                 self.nbrs[recv_buf.src_id]->last_contact = time_us_64();
-
-                // Signal connect thread to re-enable AP mode
-                target_ID             = ENABLE_AP;
-                signal_connect_thread = true;
             }
+
+            // Signal connect thread to re-enable AP mode
+            target_ID             = ENABLE_AP;
+            signal_connect_thread = true;
         }
 
         if (is_token) {

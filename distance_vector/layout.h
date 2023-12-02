@@ -13,7 +13,7 @@
 #ifdef USE_LAYOUT
 
 // Which layout number to use
-#    define LAYOUT 4
+#    define LAYOUT 1
 
 // End of list indicator
 #    define EOL -1
