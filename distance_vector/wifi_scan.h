@@ -18,10 +18,10 @@ extern char nbr_find_scan_result[SSID_LEN];
 extern nbr_t* routing_scan_result;
 
 // Scan types
-typedef enum {
+typedef enum scan_type {
     NBR_FIND_SCAN,
     DV_ROUTE_SCAN
-} scan_type;
+} scan_type_t;
 
 // Non-ID scan targets
 enum {
@@ -32,6 +32,6 @@ enum {
 
 // Scan for picow_<ID> and pidog_<hex ID> networks, returns 0 on success. Places
 // the result of the scan in the [scan_result] variable.
-int scan_wifi(scan_type t);
+int scan_wifi(scan_type_t t);
 
 #endif

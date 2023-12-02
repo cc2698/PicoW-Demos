@@ -143,7 +143,7 @@ char target_ssid[SSID_LEN];
  */
 
 // Modes of the network
-typedef enum {
+typedef enum phase {
     DO_NOTHING,
     NB_FINDING,
     DV_ROUTING
@@ -154,6 +154,21 @@ phase_t phase = DO_NOTHING;
 /*
  *	THREADS
  */
+
+// =================================================
+// Routing thread
+// =================================================
+static PT_THREAD(protothread_connect(struct pt* pt))
+{
+    PT_BEGIN(pt);
+
+    while (true) {
+
+        PT_YIELD(pt);
+    }
+
+    PT_END(pt);
+}
 
 // Re-initialize the Wifi chip when switching between AP and station modes.
 // Limited amounts of testing suggests that this isn't necessary but I'm leaving

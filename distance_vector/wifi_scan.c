@@ -192,7 +192,7 @@ static int vector_routing_scan_callback(void* env,
     return 0;
 }
 
-int scan_wifi(scan_type t)
+int scan_wifi(scan_type_t t)
 {
     // Scan options don't matter
     cyw43_wifi_scan_options_t scan_options = {0};
