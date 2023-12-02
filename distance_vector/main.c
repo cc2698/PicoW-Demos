@@ -414,7 +414,7 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
     static packet_t recv_buf;
 
     // Datatype of the received packet
-    static bool is_data, is_ack, is_token;
+    static bool is_data, is_ack, is_token, is_dv;
 
     // The ID number specified by the token
     int token_id_number;
@@ -433,6 +433,7 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         is_data  = (strcmp(recv_buf.packet_type, "data") == 0);
         is_ack   = (strcmp(recv_buf.packet_type, "ack") == 0);
         is_token = (strcmp(recv_buf.packet_type, "token") == 0);
+        is_dv    = (strcmp(recv_buf.packet_type, "dv") == 0);
 
 #ifndef PRINT_ON_RECV
         if (strcmp(recv_buf.packet_type, "ack") == 0) {
@@ -488,7 +489,6 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
             }
         }
 
-        // Assign ID number
         if (is_token) {
             printf("Received the token\n");
 
@@ -504,6 +504,7 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
                 printf("%3d\n", self.ID);
 
 #ifdef USE_LAYOUT
+                // Register my physical ID
                 ID_to_phys_ID[self.ID] = self.physical_ID;
 #endif
 
@@ -522,6 +523,15 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
             // Signal connect thread to scan for neighbors
             target_ID             = NF_SCAN;
             signal_connect_thread = true;
+        } else if (is_dv) {
+            // Store the distance vector
+            str_to_dv(&self, recv_buf.src_id, recv_buf.msg);
+
+            // Print distance vector and routing table
+            for (int i = 0; i < MAX_NODES; i++) {
+                print_dist_vector(&self, i);
+            }
+            print_routing_table(self.ID, self.routing_table);
         }
 
         PT_YIELD(pt);
