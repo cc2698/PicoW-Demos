@@ -11,12 +11,13 @@
 
 // Local
 #include "layout.h"
-#include "node.h"
 #include "wifi_scan.h"
 
 bool pidogs_found;
 
-char scan_result[SSID_LEN];
+char nbr_find_scan_result[SSID_LEN];
+
+nbr_t* routing_scan_result;
 
 // Track unique SSIDs during a scan
 int num_unique_results = 0;
@@ -35,8 +36,9 @@ bool id_is_not_a_repeat(uint64_t id)
     return true;
 }
 
-// Scan callback function
-static int scan_callback(void* env, const cyw43_ev_scan_result_t* result)
+// Scan callback function for neighbor finding
+static int nbr_finding_scan_callback(void* env,
+                                     const cyw43_ev_scan_result_t* result)
 {
     if (result) {
         // Get first 5 characters of the SSID
@@ -80,7 +82,8 @@ static int scan_callback(void* env, const cyw43_ev_scan_result_t* result)
                     num_unique_results++;
 
                     // Write SSID to scan_result
-                    snprintf(scan_result, SSID_LEN, "%s", result->ssid);
+                    snprintf(nbr_find_scan_result, SSID_LEN, "%s",
+                             result->ssid);
 
                     printf("\tssid: %-*s rssi: %4d dB  <-- New node\n",
                            SSID_LEN, result->ssid, result->rssi);
@@ -114,13 +117,89 @@ static int scan_callback(void* env, const cyw43_ev_scan_result_t* result)
     return 0;
 }
 
-int scan_wifi()
+// Scan callback function for distnace vector routing
+static int vector_routing_scan_callback(void* env,
+                                        const cyw43_ev_scan_result_t* result)
+{
+    // Break out of the function if the result is null
+    if (result == NULL) {
+        return 0;
+    }
+
+    // Get first 5 characters of the SSID
+    char header[10] = "";
+    snprintf(header, 6, "%s", result->ssid);
+
+    // Set flags
+    bool result_is_picow = (strcmp(header, "picow") == 0);
+    bool is_visible      = true;
+
+    // Break out of the function if the result is not a picow network
+    if (!result_is_picow) {
+        return 0;
+    }
+
+    // Create a token buffer (strtok is destructive)
+    char tbuf[SSID_LEN];
+    snprintf(tbuf, SSID_LEN, "%s", result->ssid);
+
+    // Separate the header
+    char* token;
+    token = strtok(tbuf, "_");
+
+#ifdef USE_LAYOUT
+    // Parse the extra physical ID out of the middle
+    token              = strtok(NULL, "_");
+    int result_phys_ID = atoi(token);
+
+    // Use the network connections list to determine if this node is
+    // actually visible
+    is_visible = conn_array[self.physical_ID][result_phys_ID];
+
+    // Break out of the function if the result is not visible
+    if (is_visible == false) {
+        return 0;
+    }
+#endif
+
+    // Get the ID - <ID> if picow_<ID> / <hex ID> if pidog_<hex ID>
+    token = strtok(NULL, "_");
+
+    // Convert the decimal ID to an integer
+    int id = atoi(token);
+
+    if (id_is_not_a_repeat(id)) {
+        // Log unique result
+        unique_results[num_unique_results] = id;
+        num_unique_results++;
+
+        nbr_t* nb = self.nbrs[id];
+
+        if (nb->up_to_date == true) {
+            printf("\tssid: %-*s Last contact: %4.1fs\n", SSID_LEN,
+                   result->ssid, (nb->last_contact) / 1e6);
+        } else {
+            printf("\tssid: %-*s Last contact: %4.1fs  <-- Needs my DV\n",
+                   SSID_LEN, result->ssid, (nb->last_contact) / 1e6);
+
+            // Update "neediest" neighbor
+            if (nb->last_contact < routing_scan_result->last_contact) {
+                routing_scan_result = nb;
+            }
+        }
+    }
+
+    return 0;
+}
+
+int scan_wifi(scan_type t)
 {
     // Scan options don't matter
     cyw43_wifi_scan_options_t scan_options = {0};
 
     // Clear last scan result
-    snprintf(scan_result, SSID_LEN, "%s", NO_UNINITIALIZED_NBRS);
+    snprintf(nbr_find_scan_result, SSID_LEN, "%s", NO_UNINITIALIZED_NBRS);
+    routing_scan_result = NULL;
 
     // Reset list of seen IDs
     num_unique_results = 0;
@@ -128,11 +207,16 @@ int scan_wifi()
         unique_results[i] = 0;
     }
 
-    printf("Starting scan...");
-
-    // This function scans for nearby Wifi networks and runs the
-    // callback function each time a network is found.
-    int err = cyw43_wifi_scan(&cyw43_state, &scan_options, NULL, scan_callback);
+    int err;
+    if (t == NBR_FIND_SCAN) {
+        printf("Starting neighbor finding scan...");
+        err = cyw43_wifi_scan(&cyw43_state, &scan_options, NULL,
+                              nbr_finding_scan_callback);
+    } else if (t == DV_ROUTE_SCAN) {
+        printf("Starting vector routing scan...");
+        err = cyw43_wifi_scan(&cyw43_state, &scan_options, NULL,
+                              vector_routing_scan_callback);
+    }
 
     if (err == 0) {
         printf("success!\n");
@@ -148,16 +232,24 @@ int scan_wifi()
         // Block until scan is complete
     }
 
-    // Mark whether any pidogs (uninitialized nodes) were found
-    if (strcmp(scan_result, NO_UNINITIALIZED_NBRS) == 0) {
-        pidogs_found = false;
-    } else {
-        pidogs_found = true;
-    };
-
-    // Print the last pidog found
     printf("\t%*c...\n", 4, ' ');
-    printf("\tscan result: %-30s\n", scan_result);
+    if (t == NBR_FIND_SCAN) {
+        // Mark whether any pidogs (uninitialized nodes) were found
+        if (strcmp(nbr_find_scan_result, NO_UNINITIALIZED_NBRS) == 0) {
+            pidogs_found = false;
+        } else {
+            pidogs_found = true;
+        };
+
+        // Print the last pidog found
+        printf("\tscan result: %-30s\n", nbr_find_scan_result);
+    } else if (t == DV_ROUTE_SCAN) {
+        if (routing_scan_result != NULL) {
+            printf("\tscan result: Node #%d\n", routing_scan_result->ID);
+        } else {
+            printf("\tscan result: No un-updated neighbors\n");
+        }
+    }
 
     return 0;
 }

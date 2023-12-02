@@ -1,9 +1,16 @@
 
 // C libraries
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+// Pico
+#include "pico/stdlib.h"
+
+// Hardware
+#include "hardware/timer.h"
 
 // Local
 #include "distance_vector.h"
@@ -16,8 +23,8 @@ void init_dist_vector_routing(node_t* n)
         // If this ID is one of [n]'s neighbors
         if (n->ID_is_nbr[id]) {
 
-            // Calculate cost to this neighbor (Placeholder) (Can be changed
-            // later to be a function of RSSI)
+            // (Placeholder) Calculate cost to this neighbor
+            // (Can be changed later to be a function of RSSI)
             int nb_cost = DEFAULT_COST;
 
             // Set distance to neighbor as 1
@@ -41,13 +48,13 @@ void init_dist_vector_routing(node_t* n)
                 nb->dist_vector[j] = DIST_IF_NO_ROUTE;
             }
 
-            nb->up_to_date = false; // Node is not up-to-date
-            nb->new_dv     = false; // Node has not sent me a new DV yet
+            nb->up_to_date   = false; // Node is not up-to-date
+            nb->last_contact = time_us_64();
+            nb->new_dv       = false; // Node has not sent me a new DV yet
 
             // Store nbr_t pointer in nbrs[id]
             n->nbrs[id] = nb;
 
-            // Increment the number of neighbors
             n->num_nbrs++;
         }
     }
@@ -58,7 +65,17 @@ void init_dist_vector_routing(node_t* n)
 
 void update_dist_vector_by_nbr_id(node_t* n, int nbr_ID)
 {
-    nbr_t* nb = n->nbrs[nbr_ID];
+    // Break out of the function if nbr_ID is not actually a neighbor
+    if (n->nbrs[nbr_ID] == NULL) {
+        print_red;
+        printf("ERROR: ");
+        print_reset;
+        printf("Node %d is not a neighbor.\n", nbr_ID);
+        return;
+    }
+
+    nbr_t* nb    = n->nbrs[nbr_ID];
+    bool updated = false;
 
     // Check for a new shortest path to each node
     for (int id = 0; id < MAX_NODES; id++) {
@@ -66,6 +83,8 @@ void update_dist_vector_by_nbr_id(node_t* n, int nbr_ID)
         int new_dist  = nb->cost + nb->dist_vector[id];
 
         if (new_dist < curr_dist) {
+            updated = true;
+
             n->dist_vector[id]   = new_dist;
             n->routing_table[id] = nb->ID;
 
@@ -73,6 +92,19 @@ void update_dist_vector_by_nbr_id(node_t* n, int nbr_ID)
             printf("\tself.dist_vector[%d]: %d --> %d\n", id, curr_dist,
                    new_dist);
         }
+    }
+
+    nb->new_dv = false;
+
+    if (updated) {
+        // Set all nbrs to un-updated
+        for (int n_id = 0; n_id < MAX_NODES; n_id++) {
+            if (n->nbrs[n_id] != NULL) {
+                n->nbrs[n_id]->up_to_date = false;
+            }
+        }
+    } else {
+        printf("No changes to distance vector.\n");
     }
 }
 
@@ -104,6 +136,9 @@ void str_to_dv(node_t* n, int nbr_ID, char* dv)
             nb->dist_vector[id] = atoi(token);
         }
     }
+
+    // Flag nbr for having new DV
+    nb->new_dv = true;
 }
 
 void dv_to_str(char* buf, node_t* n, int recv_ID, int dv[], bool poison)
@@ -188,7 +223,7 @@ void print_table(char* type, int ID, int values[])
             printf(" %2d", values[i]);
         }
     }
-    printf("\n\n");
+    printf("\n");
 }
 
 void print_dist_vector(node_t* n, int ID)
@@ -204,8 +239,8 @@ void print_dist_vector(node_t* n, int ID)
         print_red;
         printf("ERROR: ");
         print_reset;
-        printf("Node %d (me) does not have node %d's distance vector.\n\n",
-               n->ID, ID);
+        printf("Node %d (me) does not have node %d's distance vector.\n", n->ID,
+               ID);
     }
 }
 

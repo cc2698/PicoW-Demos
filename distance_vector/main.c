@@ -67,28 +67,7 @@ static ip_addr_t return_addr;
 static struct udp_pcb* udp_ack_pcb;
 struct pt_sem new_udp_ack_s;
 
-/*
- *  WIFI CONNECT / DISCONNECT
- */
-
-// Time allowed for AP to boot back up
-#define AP_BOOT_TIME 1000
-
-// Signal protothread_connect that a new connection needs to be made
-bool signal_connect_thread = false;
-
-// ID to target during connection. Can take special values
-int connected_ID = ENABLE_AP;
-int target_ID    = ENABLE_AP;
-
-// SSID of the target access point
-char target_ssid[SSID_LEN];
-
-/*
- *	UDP CALLBACK SETUP
- */
-
-// UDP recv function
+// UDP recv callback function
 void udp_recv_callback(void* arg, struct udp_pcb* upcb, struct pbuf* p,
                        const ip_addr_t* addr, u16_t port)
 {
@@ -141,6 +120,36 @@ int udp_recv_callback_init(void)
     // Success
     return 0;
 }
+
+/*
+ *  WIFI CONNECT / DISCONNECT
+ */
+
+// Time allowed for AP to boot back up
+#define AP_BOOT_TIME 1000
+
+// Signal protothread_connect that a new connection needs to be made
+bool signal_connect_thread = false;
+
+// ID to target during connection. Can take special values
+int connected_ID = ENABLE_AP;
+int target_ID    = ENABLE_AP;
+
+// SSID of the target access point
+char target_ssid[SSID_LEN];
+
+/*
+ *  STATE
+ */
+
+// Modes of the network
+typedef enum {
+    DO_NOTHING,
+    NB_FINDING,
+    DV_ROUTING
+} phase_t;
+
+phase_t phase = DO_NOTHING;
 
 /*
  *	THREADS
@@ -224,11 +233,11 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             sleep_ms_progress_bar(AP_BOOT_TIME, 30);
 
             // Scan for targets
-            scan_wifi();
+            scan_wifi(NBR_FIND_SCAN);
 
             if (pidogs_found) {
                 // Copy the result into target_ssid
-                snprintf(target_ssid, SSID_LEN, "%s", scan_result);
+                snprintf(target_ssid, SSID_LEN, "%s", nbr_find_scan_result);
 
                 // Try to connect to wifi
                 connect_err = connect_to_network(target_ssid);
@@ -287,23 +296,17 @@ static PT_THREAD(protothread_connect(struct pt* pt))
         }
 
         // Print the results of neighbor finding
-        if (self.knows_nbrs && access_point) {
+        if (phase == NB_FINDING && self.knows_nbrs && access_point) {
             print_neighbors();
 
             // Print distance vector and routing table
             for (int i = 0; i < MAX_NODES; i++) {
                 print_dist_vector(&self, i);
             }
+
             print_routing_table(self.ID, self.routing_table);
 
-#if true
-            // Print the distance vector that you'd send to your parent node
-            dv_to_str(test_buf, &self, self.parent_ID, self.dist_vector, true);
-
-            printf("%s\n", test_buf);
-
-            // Print above string turned back into a distance vector
-#endif
+            phase = DO_NOTHING;
         }
 
         PT_YIELD(pt);
@@ -483,6 +486,9 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
             } else if (strcmp(recv_buf.msg, "dv") == 0) {
                 printf("DV has been ack'ed\n");
 
+                self.nbrs[recv_buf.src_id]->up_to_date   = true;
+                self.nbrs[recv_buf.src_id]->last_contact = time_us_64();
+
                 // Signal connect thread to re-enable AP mode
                 target_ID             = ENABLE_AP;
                 signal_connect_thread = true;
@@ -493,6 +499,8 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
             printf("Received the token\n");
 
             led_on();
+
+            phase = NB_FINDING;
 
             token_id_number = atoi(recv_buf.msg);
 
@@ -524,13 +532,18 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
             target_ID             = NF_SCAN;
             signal_connect_thread = true;
         } else if (is_dv) {
+            phase = DV_ROUTING;
+
             // Store the distance vector
             str_to_dv(&self, recv_buf.src_id, recv_buf.msg);
+
+            update_dist_vector_by_nbr_id(&self, recv_buf.src_id);
 
             // Print distance vector and routing table
             for (int i = 0; i < MAX_NODES; i++) {
                 print_dist_vector(&self, i);
             }
+
             print_routing_table(self.ID, self.routing_table);
         }
 
@@ -627,6 +640,12 @@ static PT_THREAD(protothread_serial(struct pt* pt))
     // Buffer for composing messages
     char msg_buffer[UDP_MSG_LEN_MAX];
 
+    // Tokenizing
+    char tbuf[UDP_MSG_LEN_MAX];
+    char* token;
+
+    int dest_ID;
+
     while (true) {
         // Yielding here is not strictly necessary but it gives a little bit
         // of slack for the async processes so that the output is in the
@@ -650,21 +669,50 @@ static PT_THREAD(protothread_serial(struct pt* pt))
             print_neighbors();
 
         } else if (strcmp(pt_serial_in_buffer, "dv") == 0) {
-            // Assuming I'm the master node, send my DV to node #1 as a test
-            dv_to_str(msg_buffer, &self, 1, self.dist_vector, true);
+            scan_wifi(DV_ROUTE_SCAN);
 
-            // Load my distance vector into the send queue
-            send_queue = new_packet("dv", target_ID, self.ID, self.ip_addr,
-                                    self.counter, time_us_64(), msg_buffer);
-            signal_send_thread = true;
+            if (routing_scan_result != NULL) {
+                dest_ID = routing_scan_result->ID;
 
-            target_ID             = 1;
-            signal_connect_thread = true;
+                // Send a distance vector as a test
+                dv_to_str(msg_buffer, &self, dest_ID, self.dist_vector, true);
+
+                // Load my distance vector into the send queue
+                send_queue = new_packet("dv", target_ID, self.ID, self.ip_addr,
+                                        self.counter, time_us_64(), msg_buffer);
+                signal_send_thread = true;
+
+                // Signal for a reconnection
+                target_ID             = dest_ID;
+                signal_connect_thread = true;
+            }
         } else {
-            send_queue =
-                new_packet("data", target_ID, self.ID, self.ip_addr,
-                           self.counter, time_us_64(), pt_serial_in_buffer);
-            signal_send_thread = true;
+            snprintf(tbuf, UDP_MSG_LEN_MAX, "%s", pt_serial_in_buffer);
+
+            // Parse input for a dest. ID and a msg
+            token   = strtok(tbuf, "-");
+            dest_ID = atoi(token);
+            token   = strtok(NULL, "-");
+            snprintf(msg_buffer, UDP_MSG_LEN_MAX, "%s", token);
+
+            if (strcmp(msg_buffer, "dv") == 0) {
+                // Send a distance vector as a test
+                dv_to_str(msg_buffer, &self, dest_ID, self.dist_vector, true);
+
+                // Load my distance vector into the send queue
+                send_queue = new_packet("dv", target_ID, self.ID, self.ip_addr,
+                                        self.counter, time_us_64(), msg_buffer);
+                signal_send_thread = true;
+
+                // Signal for a reconnection
+                target_ID             = dest_ID;
+                signal_connect_thread = true;
+            } else {
+                send_queue =
+                    new_packet("data", target_ID, self.ID, self.ip_addr,
+                               self.counter, time_us_64(), msg_buffer);
+                signal_send_thread = true;
+            }
         }
     }
 
@@ -751,8 +799,8 @@ int main()
         boot_station();
 
         // Perform a wifi scan, copy the result to target_ssid
-        scan_wifi();
-        snprintf(target_ssid, SSID_LEN, "%s", scan_result);
+        scan_wifi(NBR_FIND_SCAN);
+        snprintf(target_ssid, SSID_LEN, "%s", nbr_find_scan_result);
 
         connect_to_network(target_ssid);
 

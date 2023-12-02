@@ -16,13 +16,12 @@
 typedef struct nbr {
     int ID;                     // ID number
     int cost;                   // Cost of sending a packet to this neighbor
-    int dist_vector[MAX_NODES]; // Estimate of neighbor's distance vector
+    int dist_vector[MAX_NODES]; // Estimate of nbr's distance vector
 
-    bool up_to_date; // Does this neighbor have the most
-                     // up-to-date copy of my distance vector?
+    bool up_to_date;       // Is this nbr up-to-date on my DV?
+    uint64_t last_contact; // Last time I talked to this nbr
 
-    bool new_dv; // Have I stored a new DV for this node that I haven't looked
-                 // at yet?
+    bool new_dv; // New DV for this node that I haven't read yet?
 } nbr_t;
 
 // Node struct
@@ -43,9 +42,8 @@ typedef struct node {
     int knows_nbrs; // Has the node been assigned an ID and found its neighbors
 
     int ID_is_nbr[MAX_NODES]; // Hashmap (<ID>, <bool>), true if ID is neighbor
-    nbr_t* nbrs[MAX_NODES];   // List of my neighbors
-    int ID_to_nbrs_index[MAX_NODES]; // Hashmap (<ID>, <index in nbrs[]>)
-    int num_nbrs;                    // Number of entries in the nbrs[] array
+    nbr_t* nbrs[MAX_NODES];   // Neighbor data, indexed by ID number
+    int num_nbrs;             // Number of neighbors
 
     int dist_vector[MAX_NODES];   // My distance vector
     int routing_table[MAX_NODES]; // My routing table
