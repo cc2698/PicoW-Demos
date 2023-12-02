@@ -59,6 +59,10 @@ int main()
     // Enable station mode
     cyw43_arch_enable_sta_mode();
 
+    // // Enable access point
+    // cyw43_arch_enable_ap_mode("picow_test", "password",
+    //                           CYW43_AUTH_WPA2_AES_PSK);
+
     // Time of next scan
     absolute_time_t next_scan_time = nil_time;
 
