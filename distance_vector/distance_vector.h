@@ -12,7 +12,7 @@
 void init_dist_vector_routing(node_t* n);
 
 // Recalculate distance vector using neighboring distance vectors
-void update_dist_vector(node_t* n, int nbr_ID);
+void update_dist_vector_by_nbr_id(node_t* n, int nbr_ID);
 
 // Convert a string to a distance vector, and store it as the distance vector of
 // neighbor <nbr_ID>

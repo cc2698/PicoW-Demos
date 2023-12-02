@@ -56,9 +56,24 @@ void init_dist_vector_routing(node_t* n)
     n->dist_vector[n->ID] = 0;
 }
 
-void update_dist_vector(node_t* n, int nbr_ID)
+void update_dist_vector_by_nbr_id(node_t* n, int nbr_ID)
 {
-    // TODO
+    nbr_t* nb = n->nbrs[nbr_ID];
+
+    // Check for a new shortest path to each node
+    for (int id = 0; id < MAX_NODES; id++) {
+        int curr_dist = n->dist_vector[id];
+        int new_dist  = nb->cost + nb->dist_vector[id];
+
+        if (new_dist < curr_dist) {
+            n->dist_vector[id]   = new_dist;
+            n->routing_table[id] = nb->ID;
+
+            printf("New dist to node %d through %d:\n", id, nbr_ID);
+            printf("\tself.dist_vector[%d]: %d --> %d\n", id, curr_dist,
+                   new_dist);
+        }
+    }
 }
 
 void str_to_dv(node_t* n, int nbr_ID, char* dv)
@@ -81,7 +96,10 @@ void str_to_dv(node_t* n, int nbr_ID, char* dv)
         token = strtok(NULL, "-");
 
         if (token == NULL) {
-            printf("ERROR: Null token");
+            print_red;
+            printf("Warning :");
+            print_reset;
+            printf("Null token for ID = %d\n", id);
         } else {
             nb->dist_vector[id] = atoi(token);
         }
@@ -163,7 +181,7 @@ void print_table(char* type, int ID, int values[])
     for (int i = 0; i < MAX_NODES; i++) {
         if (values[i] == NO_ROUTE || values[i] == DIST_IF_NO_ROUTE) {
             // If the node hasn't been found yet print in orange
-            print_orange;
+            print_magenta;
             printf(" %2d", values[i]);
             print_reset;
         } else {
