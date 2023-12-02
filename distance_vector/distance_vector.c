@@ -216,7 +216,7 @@ void print_table(char* type, int ID, int values[])
     for (int i = 0; i < MAX_NODES; i++) {
         if (values[i] == NO_ROUTE || values[i] == DIST_IF_NO_ROUTE) {
             // If the node hasn't been found yet print in orange
-            print_magenta;
+            print_orange;
             printf(" %2d", values[i]);
             print_reset;
         } else {
