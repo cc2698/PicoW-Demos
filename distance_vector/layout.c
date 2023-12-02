@@ -23,12 +23,11 @@ int adj_list[MAX_NODES][MAX_NODES] = {
 
 #    elif LAYOUT == 1
 
-// Four nodes in a line
+// Three nodes in a line
 int adj_list[MAX_NODES][MAX_NODES] = {
     {1, EOL},    // 0
     {0, 2, EOL}, // 1
-    {1, 3, EOL}, // 2
-    {2, EOL}     // 3
+    {1, EOL},    // 2
 };
 
 #    elif LAYOUT == 2
