@@ -170,50 +170,6 @@ uint64_t rand_uint64(uint64_t min, uint64_t max)
     return (uint64_t) (min + (max - min) * rand);
 }
 
-// =================================================
-// Routing thread
-// =================================================
-static PT_THREAD(protothread_route(struct pt* pt))
-{
-    PT_BEGIN(pt);
-
-    // Destination ID of distance vector packet
-    static int dest_ID;
-
-    static uint64_t cooldown_usec;
-
-    static char dv_msg_buf[UDP_MSG_LEN_MAX];
-
-    while (true) {
-        PT_YIELD_UNTIL(pt, phase == DV_ROUTING && time_us_64() > next_dv_scan
-                               && ack_queue_empty);
-
-        printf("\n========== ROUTING THREAD ==========\n");
-
-        if (num_unupdated_nbrs(&self) == 0) {
-            print_dist_vector(&self, self.ID);
-            print_routing_table(&self);
-
-            phase = DO_NOTHING;
-        } else {
-            if (access_point) {
-                shutdown_ap();
-#if RE_INIT_CYW43_BTW_MODES
-                re_init_cyw43();
-#endif
-                boot_station();
-
-                // Set dest addr to the access point
-                snprintf(dest_addr_str, IP_ADDR_LEN, "%s", AP_ADDR);
-            }
-        }
-
-        PT_YIELD(pt);
-    }
-
-    PT_END(pt);
-}
-
 // Re-initialize the Wifi chip when switching between AP and station modes.
 // Limited amounts of testing suggests that this isn't necessary but I'm leaving
 // the option here in just in case you need to turn it back on.
@@ -254,8 +210,8 @@ static PT_THREAD(protothread_connect(struct pt* pt))
         // If the thread was triggered by a scan, set target to scan
         if (!signal_connect_thread && time_us_64() > next_dv_scan) {
             printf("Scan scheduled:\n");
-            printf("\tcurr time    = %.1f\n", (float) time_us_64() / 1e6);
-            printf("\tnext_dv_scan = %.1f\n", (float) next_dv_scan / 1e6);
+            printf("\tcurr time    = %.1f sec\n", (float) time_us_64() / 1e6);
+            printf("\tnext_dv_scan = %.1f sec\n", (float) next_dv_scan / 1e6);
 
             target_ID = DV_SCAN;
         }
@@ -347,7 +303,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                     // Stay in AP mode for a random number of microseconds
                     cooldown_usec = rand_uint64(COOLDOWN_MIN, COOLDOWN_MAX);
                     next_dv_scan  = time_us_64() + cooldown_usec;
-                    printf("Waiting %.1fs before scanning again (random)\n",
+                    printf("Waiting %.1f sec before scanning again (random)\n",
                            (float) cooldown_usec / 1e6);
 
                     // Signal for AP mode
@@ -651,10 +607,17 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         }
 
         if (is_ack) {
+            ack_is_data  = (strcmp(recv_buf.msg, "data") == 0);
             ack_is_token = (strcmp(recv_buf.msg, "token") == 0);
             ack_is_dv    = (strcmp(recv_buf.msg, "dv") == 0);
 
-            if (ack_is_token) {
+            if (ack_is_data) {
+                printf("Data has been ack'ed\n");
+
+                // Signal connect thread to re-enable AP mode
+                target_ID             = ENABLE_AP;
+                signal_connect_thread = true;
+            } else if (ack_is_token) {
                 printf("Token has been ack'ed\n");
 
                 led_off();
@@ -725,11 +688,11 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
             dv_updated = update_dist_vector_by_nbr_id(&self, recv_buf.src_id);
 
             // Delay sending your DV out in case more people try to send you DVs
-            printf("Delaying next scan: (old) %.1f ",
+            printf("Delaying next scan: (old) %.1f sec ",
                    (float) next_dv_scan / 1e6);
             next_dv_scan = time_us_64() + (10 * 1e6);
-            printf("--> %.1f (new)\n", (float) next_dv_scan / 1e6);
-            printf("\tcurrent time = %.1f\n", (float) time_us_64() / 1e6);
+            printf("--> %.1f sec (new)\n", (float) next_dv_scan / 1e6);
+            printf("\tcurrent time = %.1f sec\n", (float) time_us_64() / 1e6);
 
             // Print DV and neighbor's DV
             print_dist_vector(&self, recv_buf.src_id);
@@ -849,7 +812,7 @@ static PT_THREAD(protothread_serial(struct pt* pt))
         // Spawn thread for non-blocking read
         serial_read;
 
-        printf("\n========== RECEIVE THREAD ==========\n");
+        printf("\n========== SERIAL THREAD ==========\n");
         print_bold;
         printf("USER INPUT >>> %s\n", pt_serial_in_buffer);
         print_reset;
