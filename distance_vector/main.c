@@ -34,16 +34,16 @@
 #include "utils.h"
 #include "wifi_scan.h"
 
-/*
+/********************************
  *  DEBUGGING
- */
+ ********************************/
 
 #define PRINT_ON_RECV
 #define PRINT_ON_SEND
 
-/*
+/********************************
  *  UDP
- */
+ ********************************/
 
 // UDP constants
 #define UDP_PORT 4444 // Same port number on both devices
@@ -57,7 +57,6 @@ struct pt_sem new_udp_recv_s;
 packet_t send_queue;
 static ip_addr_t dest_addr;
 static struct udp_pcb* udp_send_pcb;
-struct pt_sem new_udp_send_s;
 bool signal_send_thread = false;
 
 // UDP ack
@@ -122,9 +121,9 @@ int udp_recv_callback_init(void)
     return 0;
 }
 
-/*
+/************************************************
  *  WIFI CONNECT / DISCONNECT
- */
+ ************************************************/
 
 // Time allowed for AP to boot back up
 #define AP_BOOT_TIME 1000
@@ -139,9 +138,9 @@ int target_ID    = ENABLE_AP;
 // SSID of the target access point
 char target_ssid[SSID_LEN];
 
-/*
+/************************************************
  *  STATE
- */
+ ************************************************/
 
 // Modes of the network
 typedef enum phase {
@@ -152,14 +151,15 @@ typedef enum phase {
 
 phase_t phase = DO_NOTHING;
 
-/*
+/************************************************
  *  ROUTING
- */
+ ************************************************/
 
 // Cooldown min and max durations in microseconds (us)
 #define COOLDOWN_MIN (15 * 1e6)
 #define COOLDOWN_MAX (30 * 1e6)
 
+// Scan scheduling macros
 #define NO_SCAN   UINT64_MAX
 #define SCAN_ASAP 0
 
@@ -173,9 +173,9 @@ uint64_t rand_uint64(uint64_t min, uint64_t max)
     return (uint64_t) (min + (max - min) * rand);
 }
 
-/*
+/************************************************
  *	THREADS
- */
+ ************************************************/
 
 // Re-initialize the Wifi chip when switching between AP and station modes.
 // Limited amounts of testing suggests that this isn't necessary but I'm leaving
@@ -227,9 +227,9 @@ static PT_THREAD(protothread_connect(struct pt* pt))
         // Reset error code
         connect_err = 0;
 
-        /*
+        /************************************************
          *  Toggle connection state
-         */
+         ************************************************/
 
         if (target_ID != ENABLE_AP) {
             // Set mode to station mode
@@ -262,9 +262,9 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             }
         }
 
-        /*
+        /************************************************
          *  Perform scan or connect behavior
-         */
+         ************************************************/
 
         if (target_ID == DV_SCAN) {
 
@@ -393,9 +393,9 @@ static PT_THREAD(protothread_connect(struct pt* pt))
             printf("target_ID = %d\n", target_ID);
         }
 
-        /*
+        /************************************************
          *  Re-initialize UDP
-         */
+         ************************************************/
 
         // Re-initialize UDP recv callback function
         udp_remove(udp_recv_pcb);
@@ -452,8 +452,6 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
     static err_t er;
 
     while (true) {
-        // Wait until the buffer is written
-        // PT_SEM_SAFE_WAIT(pt, &new_udp_send_s);
 
         PT_YIELD_UNTIL(pt, signal_send_thread && !signal_connect_thread
                                && !access_point);
@@ -591,9 +589,9 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
             signal_connect_thread = true;
         }
 
-        /*
-         *  Type-specific behavior:
-         */
+        /************************************************
+         *  Type-specific behavior
+         ************************************************/
 
         // If data or token was received, respond with ACK
         if (!is_ack) {
@@ -797,14 +795,15 @@ static PT_THREAD(protothread_serial(struct pt* pt))
 {
     PT_BEGIN(pt);
 
-    // Buffer for composing messages
-    char msg_buffer[UDP_MSG_LEN_MAX];
-
     // Tokenizing
     char tbuf[UDP_MSG_LEN_MAX];
     char* token;
 
+    // Destination ID
     int dest_ID;
+
+    // Buffer for composing messages
+    char msg_buffer[UDP_MSG_LEN_MAX];
 
     while (true) {
         // Yielding here is not strictly necessary but it gives a little bit
@@ -858,19 +857,18 @@ static PT_THREAD(protothread_serial(struct pt* pt))
     PT_END(pt);
 }
 
-/*
+/********************************
  *  CORE 1 MAIN
- */
+ ********************************/
 
-// Core 1 main function
 void core_1_main()
 {
     printf("Core 1 launched!\n");
 }
 
-/*
+/********************************
  *  CORE 0 MAIN
- */
+ ********************************/
 
 int main()
 {
@@ -957,7 +955,7 @@ int main()
         printf("success!\n");
     }
 
-    // The threads use semaphores to signal each other when buffers are
+    // Some threads use semaphores to signal each other when buffers are
     // written. If a thread tries to aquire a semaphore that is unavailable,
     // it yields to the next thread in the scheduler.
     PT_SEM_SAFE_INIT(&new_udp_recv_s, 0);
@@ -976,7 +974,6 @@ int main()
     pt_add_thread(protothread_udp_ack);
     pt_add_thread(protothread_serial);
     pt_add_thread(protothread_connect);
-    // pt_add_thread(protothread_route);
     pt_schedule_start;
 
     // De-initialize the cyw43 architecture.

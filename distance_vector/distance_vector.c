@@ -33,9 +33,9 @@ void init_dist_vector_routing(node_t* n)
             // Next-hop node for a neighbor is itself
             n->routing_table[id] = id;
 
-            /*
+            /************************************************
              *	Initialize a new neighbor
-             */
+             ************************************************/
 
             // Allocate memory
             nbr_t* nb = malloc(sizeof(struct nbr));
