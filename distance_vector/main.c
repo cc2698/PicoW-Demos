@@ -153,15 +153,18 @@ typedef enum phase {
 phase_t phase = DO_NOTHING;
 
 /*
- *	THREADS
+ *  ROUTING
  */
 
 // Cooldown min and max durations in microseconds (us)
 #define COOLDOWN_MIN (15 * 1e6)
 #define COOLDOWN_MAX (30 * 1e6)
 
+#define NO_SCAN   UINT64_MAX
+#define SCAN_ASAP 0
+
 // Time of next routing scan
-uint64_t next_dv_scan = UINT64_MAX;
+uint64_t next_dv_scan = NO_SCAN;
 
 // Generate a random uint64_t in the range [min, max]
 uint64_t rand_uint64(uint64_t min, uint64_t max)
@@ -169,6 +172,10 @@ uint64_t rand_uint64(uint64_t min, uint64_t max)
     float rand = (float) (get_rand_32()) / UINT32_MAX;
     return (uint64_t) (min + (max - min) * rand);
 }
+
+/*
+ *	THREADS
+ */
 
 // Re-initialize the Wifi chip when switching between AP and station modes.
 // Limited amounts of testing suggests that this isn't necessary but I'm leaving
@@ -182,19 +189,16 @@ static PT_THREAD(protothread_connect(struct pt* pt))
 {
     PT_BEGIN(pt);
 
-    static int err;
-
-    static char id_token[TOK_LEN];
-    static packet_t token_packet;
-    static char msg_buf[TOK_LEN];
-
+    // Error code for connect_to_network()
     static int connect_err;
 
-    // Buffer for storing strings for debugging (testing purposes only)
-    char test_buf[UDP_MSG_LEN_MAX];
-
+    // Destination ID
     int dest_ID;
 
+    // Buffer for composing messages
+    static char msg_buf[TOK_LEN];
+
+    // Amount of time to stay in AP mode after scanning and not seeing anyone
     uint64_t cooldown_usec;
 
     while (true) {
@@ -268,7 +272,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                 print_dist_vector(&self, self.ID);
                 print_routing_table(&self);
 
-                next_dv_scan = UINT64_MAX;
+                next_dv_scan = NO_SCAN;
 
                 // Signal for AP mode
                 target_ID             = ENABLE_AP;
@@ -638,7 +642,7 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
                 // simultaneously. The Picos cannot acheive this so this is the
                 // closest I can get.
                 target_ID    = DV_SCAN;
-                next_dv_scan = 0;
+                next_dv_scan = SCAN_ASAP;
             }
         }
 
@@ -825,32 +829,8 @@ static PT_THREAD(protothread_serial(struct pt* pt))
                                     self.counter, time_us_64(), "1");
             signal_send_thread = true;
 
-        } else if (strcmp(pt_serial_in_buffer, "nbr") == 0) {
-            // Print list of neighbors
-            print_neighbors();
-
         } else if (strcmp(pt_serial_in_buffer, "dv") == 0) {
-            scan_wifi(DV_ROUTE_SCAN);
-
-            if (routing_scan_result != NULL) {
-                dest_ID = routing_scan_result->ID;
-
-                // Send a distance vector as a test
-                dv_to_str(msg_buffer, &self, dest_ID, self.dist_vector, true);
-
-                // Load my distance vector into the send queue
-                send_queue = new_packet("dv", dest_ID, self.ID, self.ip_addr,
-                                        self.counter, time_us_64(), msg_buffer);
-                signal_send_thread = true;
-
-                // Signal for a reconnection
-                target_ID             = dest_ID;
-                signal_connect_thread = true;
-            } else {
-                // Signal for a reconnection
-                target_ID             = ENABLE_AP;
-                signal_connect_thread = true;
-            }
+            next_dv_scan = SCAN_ASAP;
         } else {
             snprintf(tbuf, UDP_MSG_LEN_MAX, "%s", pt_serial_in_buffer);
 
@@ -860,28 +840,18 @@ static PT_THREAD(protothread_serial(struct pt* pt))
             token   = strtok(NULL, "-");
             snprintf(msg_buffer, UDP_MSG_LEN_MAX, "%s", token);
 
-            if (strcmp(msg_buffer, "dv") == 0) {
-                // Send a distance vector as a test
-                dv_to_str(msg_buffer, &self, dest_ID, self.dist_vector, true);
+            print_bold;
+            printf("\tdest ID = %d\n", dest_ID);
+            printf("\tmessage = %s\n", msg_buffer);
+            print_reset;
 
-                // Load my distance vector into the send queue
-                send_queue = new_packet("dv", dest_ID, self.ID, self.ip_addr,
-                                        self.counter, time_us_64(), msg_buffer);
-                signal_send_thread = true;
+            send_queue = new_packet("data", dest_ID, self.ID, self.ip_addr,
+                                    self.counter, time_us_64(), msg_buffer);
+            signal_send_thread = true;
 
-                // Signal for a reconnection
-                target_ID             = self.routing_table[dest_ID];
-                signal_connect_thread = true;
-
-            } else {
-                send_queue = new_packet("data", dest_ID, self.ID, self.ip_addr,
-                                        self.counter, time_us_64(), msg_buffer);
-                signal_send_thread = true;
-
-                // Signal for a reconnection
-                target_ID             = self.routing_table[dest_ID];
-                signal_connect_thread = true;
-            }
+            // Signal for a reconnection
+            target_ID             = self.routing_table[dest_ID];
+            signal_connect_thread = true;
         }
     }
 
