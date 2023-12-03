@@ -156,18 +156,19 @@ phase_t phase = DO_NOTHING;
  *	THREADS
  */
 
-#define COOLDOWN_USEC_MIN (20 * 1e6)
-#define COOLDOWN_USEC_MAX (30 * 1e6)
+// Cooldown min and max durations in microseconds (us)
+#define COOLDOWN_MIN (15 * 1e6)
+#define COOLDOWN_MAX (30 * 1e6)
 
-uint64_t next_scan;
+// Time of next routing scan
+uint64_t next_dv_scan = UINT64_MAX;
 
+// Generate a random uint64_t in the range [min, max]
 uint64_t rand_uint64(uint64_t min, uint64_t max)
 {
     float rand = (float) (get_rand_32()) / UINT32_MAX;
     return (uint64_t) (min + (max - min) * rand);
 }
-
-bool signal_route_thread = true;
 
 // =================================================
 // Routing thread
@@ -179,36 +180,32 @@ static PT_THREAD(protothread_route(struct pt* pt))
     // Destination ID of distance vector packet
     static int dest_ID;
 
+    static uint64_t cooldown_usec;
+
     static char dv_msg_buf[UDP_MSG_LEN_MAX];
 
     while (true) {
-        PT_YIELD_UNTIL(pt, phase == DV_ROUTING && signal_route_thread
-                               && time_us_64() > next_scan && ack_queue_empty);
-        signal_route_thread = false;
+        PT_YIELD_UNTIL(pt, phase == DV_ROUTING && time_us_64() > next_dv_scan
+                               && ack_queue_empty);
 
-        scan_wifi(DV_ROUTE_SCAN);
+        printf("\n========== ROUTING THREAD ==========\n");
 
-        if (routing_scan_result != NULL) {
-            dest_ID = routing_scan_result->ID;
+        if (num_unupdated_nbrs(&self) == 0) {
+            print_dist_vector(&self, self.ID);
+            print_routing_table(&self);
 
-            // Send a distance vector as a test
-            dv_to_str(dv_msg_buf, &self, dest_ID, self.dist_vector, true);
-
-            // Load my distance vector into the send queue
-            send_queue = new_packet("dv", dest_ID, self.ID, self.ip_addr,
-                                    self.counter, time_us_64(), dv_msg_buf);
-            signal_send_thread = true;
-
-            // Signal for a reconnection
-            target_ID             = dest_ID;
-            signal_connect_thread = true;
+            phase = DO_NOTHING;
         } else {
-            // Stay in AP mode for a random number of microseconds
-            next_scan = rand_uint64(COOLDOWN_USEC_MIN, COOLDOWN_USEC_MAX);
+            if (access_point) {
+                shutdown_ap();
+#if RE_INIT_CYW43_BTW_MODES
+                re_init_cyw43();
+#endif
+                boot_station();
 
-            // Signal for AP mode
-            target_ID             = ENABLE_AP;
-            signal_connect_thread = true;
+                // Set dest addr to the access point
+                snprintf(dest_addr_str, IP_ADDR_LEN, "%s", AP_ADDR);
+            }
         }
 
         PT_YIELD(pt);
@@ -240,10 +237,31 @@ static PT_THREAD(protothread_connect(struct pt* pt))
     // Buffer for storing strings for debugging (testing purposes only)
     char test_buf[UDP_MSG_LEN_MAX];
 
+    int dest_ID;
+
+    uint64_t cooldown_usec;
+
     while (true) {
 
         // Wait until signalled AND there are no pending ACKs
-        PT_YIELD_UNTIL(pt, signal_connect_thread && ack_queue_empty);
+        PT_YIELD_UNTIL(pt,
+                       (signal_connect_thread || time_us_64() > next_dv_scan)
+                           && ack_queue_empty);
+
+        printf("\n========== CONNECT THREAD ==========\n");
+        // printf("target_ID: %d\n", target_ID);
+
+        // If the thread was triggered by a scan, set target to scan
+        if (!signal_connect_thread && time_us_64() > next_dv_scan) {
+            printf("Scan scheduled:\n");
+            printf("\tcurr time    = %.1f\n", (float) time_us_64() / 1e6);
+            printf("\tnext_dv_scan = %.1f\n", (float) next_dv_scan / 1e6);
+
+            target_ID = DV_SCAN;
+        }
+
+        printf("target_ID: %d\n", target_ID);
+
         signal_connect_thread = false;
 
         // Reset error code
@@ -253,28 +271,27 @@ static PT_THREAD(protothread_connect(struct pt* pt))
          *  Toggle connection state
          */
 
-        if (target_ID == NF_SCAN || target_ID >= CONNECT_TO_AP) {
+        if (target_ID != ENABLE_AP) {
             // Set mode to station mode
             if (access_point) {
                 shutdown_ap();
-
 #if RE_INIT_CYW43_BTW_MODES
                 re_init_cyw43();
 #endif
-
                 boot_station();
 
                 // Set dest addr to the access point
                 snprintf(dest_addr_str, IP_ADDR_LEN, "%s", AP_ADDR);
+            } else {
+                shutdown_station();
+                boot_station();
             }
         } else if (target_ID == ENABLE_AP) {
             if (!access_point) {
                 shutdown_station();
-
 #if RE_INIT_CYW43_BTW_MODES
                 re_init_cyw43();
 #endif
-
                 // Turn on the access point
                 generate_picow_ssid(self.wifi_ssid, self.ID);
 
@@ -289,7 +306,58 @@ static PT_THREAD(protothread_connect(struct pt* pt))
          *  Perform scan or connect behavior
          */
 
-        if (target_ID == NF_SCAN) {
+        if (target_ID == DV_SCAN) {
+
+            if (num_unupdated_nbrs(&self) == 0 && phase == DV_ROUTING) {
+                print_dist_vector(&self, self.ID);
+                print_routing_table(&self);
+
+                next_dv_scan = UINT64_MAX;
+
+                // Signal for AP mode
+                target_ID             = ENABLE_AP;
+                signal_connect_thread = true;
+
+                // Don't scan anymore until your DV updates
+                phase = DO_NOTHING;
+
+            } else {
+                scan_wifi(DV_ROUTE_SCAN);
+
+                if (routing_scan_result != NULL) {
+                    dest_ID = routing_scan_result->ID;
+
+                    // Load my distance vector into the send queue
+                    dv_to_str(msg_buf, &self, dest_ID, self.dist_vector, true);
+                    send_queue =
+                        new_packet("dv", dest_ID, self.ID, self.ip_addr,
+                                   self.counter, time_us_64(), msg_buf);
+                    signal_send_thread = true;
+
+                    // Signal for a reconnection
+                    printf("Changing target_ID: %d", target_ID);
+                    target_ID = dest_ID;
+                    printf(" --> %d\n", target_ID);
+
+                    signal_connect_thread = true;
+
+                    next_dv_scan = time_us_64() + COOLDOWN_MIN;
+
+                } else {
+                    // Stay in AP mode for a random number of microseconds
+                    cooldown_usec = rand_uint64(COOLDOWN_MIN, COOLDOWN_MAX);
+                    next_dv_scan  = time_us_64() + cooldown_usec;
+                    printf("Waiting %.1fs before scanning again (random)\n",
+                           (float) cooldown_usec / 1e6);
+
+                    // Signal for AP mode
+                    target_ID             = ENABLE_AP;
+                    signal_connect_thread = true;
+                }
+            }
+
+        } else if (target_ID == NF_SCAN) {
+
             // Give time for whoever sent you the token to boot back up
             printf("Waiting for nearby APs to boot:\n\t");
             sleep_ms_progress_bar(AP_BOOT_TIME, 30);
@@ -331,12 +399,19 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                     print_reset;
                 }
             }
+
         } else if (target_ID >= CONNECT_TO_AP) {
+
             // Connect to someone else's network
             generate_picow_ssid(target_ssid, target_ID);
 
             // Try to connect to wifi
             connect_err = connect_to_network(target_ssid);
+
+            // Update time of last contact
+            if (phase == DV_ROUTING && self.nbrs[target_ID] != NULL) {
+                self.nbrs[target_ID]->last_contact = time_us_64();
+            }
 
             if (connect_err == 0) {
                 // If successful, change the connected_id number
@@ -345,7 +420,17 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                 // If failed, go back to AP mode
                 target_ID             = ENABLE_AP;
                 signal_connect_thread = true;
+
+                if (phase == DV_ROUTING) {
+                    next_dv_scan = time_us_64() + COOLDOWN_MIN;
+                }
             }
+        } else if (target_ID != ENABLE_AP) {
+            // Invalid target error
+            print_red;
+            printf("ERROR: ");
+            print_reset;
+            printf("target_ID = %d\n", target_ID);
         }
 
         /*
@@ -370,7 +455,7 @@ static PT_THREAD(protothread_connect(struct pt* pt))
                 print_dist_vector(&self, i);
             }
 
-            print_routing_table(self.ID, self.routing_table);
+            print_routing_table(&self);
 
             phase = DO_NOTHING;
         }
@@ -410,8 +495,11 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
         // Wait until the buffer is written
         // PT_SEM_SAFE_WAIT(pt, &new_udp_send_s);
 
-        PT_YIELD_UNTIL(pt, signal_send_thread && !signal_connect_thread);
+        PT_YIELD_UNTIL(pt, signal_send_thread && !signal_connect_thread
+                               && !access_point);
         signal_send_thread = false;
+
+        printf("\n========== SEND THREAD ==========\n");
 
         // Assign target pico IP address, string -> ip_addr_t
         ipaddr_aton(dest_addr_str, &dest_addr);
@@ -443,8 +531,14 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
         print_reset;
 #endif
 
-        // Print new local address
-        printf("Destination IPv4 addr: %s\n", ip4addr_ntoa(&dest_addr));
+        if (!access_point) { // Print destination addr
+            printf("Destination IPv4 addr: %s\n", ip4addr_ntoa(&dest_addr));
+        } else {
+            print_red;
+            printf("ERROR: ");
+            print_reset;
+            printf("An access point is using the send thread!\n");
+        }
 
         // Send packet
         cyw43_arch_lwip_begin();
@@ -484,6 +578,7 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
 
     // Datatype of the received packet
     static bool is_data, is_ack, is_token, is_dv;
+    static bool ack_is_data, ack_is_token, ack_is_dv;
 
     // The ID number specified by the token
     int token_id_number;
@@ -496,6 +591,8 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
     while (true) {
         // Wait until the buffer is written
         PT_SEM_SAFE_WAIT(pt, &new_udp_recv_s);
+
+        printf("\n========== RECEIVE THREAD ==========\n");
 
         // Convert the contents of the received packet to a packet_t
         recv_buf = str_to_packet(recv_data);
@@ -554,23 +651,32 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         }
 
         if (is_ack) {
-            if (strcmp(recv_buf.msg, "token") == 0) {
+            ack_is_token = (strcmp(recv_buf.msg, "token") == 0);
+            ack_is_dv    = (strcmp(recv_buf.msg, "dv") == 0);
+
+            if (ack_is_token) {
                 printf("Token has been ack'ed\n");
 
                 led_off();
-            } else if (strcmp(recv_buf.msg, "dv") == 0) {
+
+                // Signal connect thread to re-enable AP mode
+                target_ID             = ENABLE_AP;
+                signal_connect_thread = true;
+            } else if (ack_is_dv) {
                 printf("DV has been ack'ed\n");
 
                 self.nbrs[recv_buf.src_id]->up_to_date   = true;
                 self.nbrs[recv_buf.src_id]->last_contact = time_us_64();
 
-                // If successfully sent a DV, try sending another one
-                signal_route_thread = true;
+                // If you successfully sent a DV, try sending another one out
+                // immediately.
+                //
+                // The normal DV algorithm broadcasts to all neighbors
+                // simultaneously. The Picos cannot acheive this so this is the
+                // closest I can get.
+                target_ID    = DV_SCAN;
+                next_dv_scan = 0;
             }
-
-            // Signal connect thread to re-enable AP mode
-            target_ID             = ENABLE_AP;
-            signal_connect_thread = true;
         }
 
         if (is_token) {
@@ -609,27 +715,27 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
             // Signal connect thread to scan for neighbors
             target_ID             = NF_SCAN;
             signal_connect_thread = true;
+
         } else if (is_dv) {
             phase = DV_ROUTING;
 
             // Store the distance vector
             str_to_dv(&self, recv_buf.src_id, recv_buf.msg);
 
+            dv_updated = update_dist_vector_by_nbr_id(&self, recv_buf.src_id);
+
             // Delay sending your DV out in case more people try to send you DVs
-            printf("Delaying next scan: (old) %.1f ", (float) next_scan / 1e6);
-            next_scan = time_us_64() + (10 * 1e6);
-            printf("--> %.1f (new)\n", (float) next_scan / 1e6);
+            printf("Delaying next scan: (old) %.1f ",
+                   (float) next_dv_scan / 1e6);
+            next_dv_scan = time_us_64() + (10 * 1e6);
+            printf("--> %.1f (new)\n", (float) next_dv_scan / 1e6);
             printf("\tcurrent time = %.1f\n", (float) time_us_64() / 1e6);
 
-            dv_updated = update_dist_vector_by_nbr_id(&self, recv_buf.src_id);
-            if (dv_updated) {
-                signal_route_thread = true;
-            }
-
+            // Print DV and neighbor's DV
             print_dist_vector(&self, recv_buf.src_id);
             print_dist_vector(&self, self.ID);
 
-            print_routing_table(self.ID, self.routing_table);
+            print_routing_table(&self);
         }
 
         PT_YIELD(pt);
@@ -666,6 +772,8 @@ static PT_THREAD(protothread_udp_ack(struct pt* pt))
     while (true) {
         // Wait until the buffer is written
         PT_SEM_SAFE_WAIT(pt, &new_udp_ack_s);
+
+        printf("\n========== ACK THREAD ==========\n");
 
         // Assign target pico IP address
         ipaddr_aton(return_addr_str, &return_addr);
@@ -740,6 +848,11 @@ static PT_THREAD(protothread_serial(struct pt* pt))
 
         // Spawn thread for non-blocking read
         serial_read;
+
+        printf("\n========== RECEIVE THREAD ==========\n");
+        print_bold;
+        printf("USER INPUT >>> %s\n", pt_serial_in_buffer);
+        print_reset;
 
         if (strcmp(pt_serial_in_buffer, "token") == 0) {
             led_on();
@@ -887,7 +1000,7 @@ int main()
         // If all Pico-Ws boot at the same time, this delay gives the other
         // nodes time to setup before the master tries to scan.
         printf("Waiting for nearby APs to boot:\n\t");
-        sleep_ms_progress_bar(AP_BOOT_TIME, 30);
+        sleep_ms_progress_bar(2 * AP_BOOT_TIME, 30);
 
         boot_station();
 
@@ -930,7 +1043,7 @@ int main()
     pt_add_thread(protothread_udp_ack);
     pt_add_thread(protothread_serial);
     pt_add_thread(protothread_connect);
-    pt_add_thread(protothread_route);
+    // pt_add_thread(protothread_route);
     pt_schedule_start;
 
     // De-initialize the cyw43 architecture.

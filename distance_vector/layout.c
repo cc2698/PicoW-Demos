@@ -131,8 +131,6 @@ int init_layout()
 
 void print_adj_list(int phys_ID, bool full_list)
 {
-    printf("\n");
-
     // Title
     printf("NETWORK PHYS. ADJACENCY LIST\n");
 
@@ -169,8 +167,6 @@ void print_adj_list(int phys_ID, bool full_list)
         }
         printf("]\n");
     }
-
-    printf("\n");
 }
 
 #endif

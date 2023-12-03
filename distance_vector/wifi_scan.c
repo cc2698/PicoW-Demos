@@ -247,7 +247,7 @@ int scan_wifi(scan_type_t t)
         if (routing_scan_result != NULL) {
             printf("\tscan result: Node #%d\n", routing_scan_result->ID);
         } else {
-            printf("\tscan result: No un-updated neighbors\n");
+            printf("\tscan result: No un-updated nbrs are hosting APs\n");
         }
     }
 

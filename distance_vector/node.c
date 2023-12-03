@@ -80,22 +80,38 @@ node_t new_node(int is_master)
     return n;
 }
 
+int num_unupdated_nbrs(node_t* n)
+{
+    int num_unupdated = 0;
+    nbr_t* nb;
+    for (int n_id = 0; n_id < MAX_NODES; n_id++) {
+        nb = n->nbrs[n_id];
+        if (nb != NULL && nb->up_to_date == false) {
+            num_unupdated++;
+        }
+    }
+
+    printf("Number of unupdated neighbors: %d\n", num_unupdated);
+
+    return num_unupdated;
+}
+
 void print_neighbors()
 {
     print_green;
     printf("\n");
     printf("NEIGHBOR SEARCH RESULTS:\n");
-    printf("My ID:        %d\n", self.ID);
+    printf("\tMy ID:        %d\n", self.ID);
 
     // Print parent
     if (self.parent_ID == DEFAULT_ID) {
-        printf("Parent ID:    n/a (root node)\n");
+        printf("\tParent ID:    n/a (root node)\n");
     } else {
-        printf("Parent ID:    %d\n", self.parent_ID);
+        printf("\tParent ID:    %d\n", self.parent_ID);
     }
 
     // Print neighbors
-    printf("Neighbors:  [ ");
+    printf("\tNeighbors:  [ ");
     for (int i = 0; i < MAX_NODES; i++) {
         if (self.ID_is_nbr[i]) {
             printf("%d ", i);
@@ -104,22 +120,21 @@ void print_neighbors()
     printf("]\n");
 
 #ifdef USE_LAYOUT
-    // Print the same results as above, but using physical IDs instead
 
+    // Print the same results as above, but using physical IDs instead
     print_yellow;
-    printf("\n");
     printf("USING PHYSICAL IDS:\n");
-    printf("My ID:        %d\n", self.physical_ID);
+    printf("\tMy ID:        %d\n", self.physical_ID);
 
     // Print parent
     if (self.parent_ID == DEFAULT_ID) {
-        printf("Parent ID:    n/a (root node)\n");
+        printf("\tParent ID:    n/a (root node)\n");
     } else {
-        printf("Parent ID:    %d\n", ID_to_phys_ID[self.parent_ID]);
+        printf("\tParent ID:    %d\n", ID_to_phys_ID[self.parent_ID]);
     }
 
     // Print neighbors
-    printf("Neighbors:  [ ");
+    printf("\tNeighbors:  [ ");
     for (int i = 0; i < MAX_NODES; i++) {
         if (self.ID_is_nbr[i]) {
             printf("%d ", ID_to_phys_ID[i]);

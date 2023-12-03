@@ -26,6 +26,6 @@ void dv_to_str(char* buf, node_t* n, int recv_ID, int dv[], bool poison);
 void print_dist_vector(node_t* n, int ID);
 
 // Print a routing table
-void print_routing_table(int ID, int rt[]);
+void print_routing_table(node_t* n);
 
 #endif

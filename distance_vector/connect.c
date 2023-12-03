@@ -171,21 +171,15 @@ int connect_to_network(char* ssid)
         printf("\tssid         = %s\n", ssid);
         printf("\tpassword     = %s\n", WIFI_PASSWORD);
 
-        // Configure target IP address
-        snprintf(self.ip_addr, IP_ADDR_LEN, "%s", STATION_ADDR);
+        // Configure destination IP address as access point IP
         snprintf(dest_addr_str, IP_ADDR_LEN, "%s", AP_ADDR);
 
+        // Configure my address as assigned by DHCP
+        snprintf(self.ip_addr, IP_ADDR_LEN, "%s",
+                 ip4addr_ntoa(netif_ip4_addr(netif_list)));
+
         // Print address assigned by DHCP
-        printf("\tMy IPv4 addr = %s (DHCP) --> ",
-               ip4addr_ntoa(netif_ip4_addr(netif_list)));
-
-        // Set local address, override the address assigned by DHCP
-        ip_addr_t ip;
-        ipaddr_aton(STATION_ADDR, &ip);
-        netif_set_ipaddr(netif_default, &ip);
-
-        // Print new local address
-        printf("%s (new)\n", ip4addr_ntoa(netif_ip4_addr(netif_list)));
+        printf("\tMy IPv4 addr = %s (DHCP)\n", self.ip_addr);
 
         return 0;
     }

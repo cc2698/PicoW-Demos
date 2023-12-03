@@ -74,8 +74,10 @@ bool update_dist_vector_by_nbr_id(node_t* n, int nbr_ID)
         return false;
     }
 
-    nbr_t* nb    = n->nbrs[nbr_ID];
-    bool updated = false;
+    nbr_t* nb  = n->nbrs[nbr_ID];
+    nb->new_dv = false;
+
+    bool my_dv_updated = false;
 
     // Check for a new shortest path to each node
     for (int id = 0; id < MAX_NODES; id++) {
@@ -83,7 +85,7 @@ bool update_dist_vector_by_nbr_id(node_t* n, int nbr_ID)
         int new_dist  = nb->cost + nb->dist_vector[id];
 
         if (new_dist < curr_dist) {
-            updated = true;
+            my_dv_updated = true;
 
             n->dist_vector[id]   = new_dist;
             n->routing_table[id] = nb->ID;
@@ -94,10 +96,8 @@ bool update_dist_vector_by_nbr_id(node_t* n, int nbr_ID)
         }
     }
 
-    nb->new_dv = false;
-
-    if (updated) {
-        // Set all nbrs to un-updated
+    // If my distance vector changed, flag all nbrs as not up-to-date
+    if (my_dv_updated) {
         for (int n_id = 0; n_id < MAX_NODES; n_id++) {
             if (n->nbrs[n_id] != NULL) {
                 n->nbrs[n_id]->up_to_date = false;
@@ -107,7 +107,7 @@ bool update_dist_vector_by_nbr_id(node_t* n, int nbr_ID)
         printf("No changes to distance vector.\n");
     }
 
-    return updated;
+    return my_dv_updated;
 }
 
 void str_to_dv(node_t* n, int nbr_ID, char* dv)
@@ -238,16 +238,16 @@ void print_dist_vector(node_t* n, int ID)
         nbr_t* nb = n->nbrs[ID];
         print_table("edv", ID, nb->dist_vector);
     } else {
-        print_red;
-        printf("ERROR: ");
+        print_yellow;
+        printf("WARNING: ");
         print_reset;
         printf("Node %d (me) does not have node %d's distance vector.\n", n->ID,
                ID);
     }
 }
 
-void print_routing_table(int ID, int rt[])
+void print_routing_table(node_t* n)
 {
     // Set type = "rt"
-    print_table("rt", ID, rt);
+    print_table("rt", n->ID, n->routing_table);
 }

@@ -19,7 +19,7 @@ typedef struct nbr {
     int dist_vector[MAX_NODES]; // Estimate of nbr's distance vector
 
     bool up_to_date;       // Is this nbr up-to-date on my DV?
-    uint64_t last_contact; // Last time I talked to this nbr
+    uint64_t last_contact; // Last time I tried/succeeded talking to this nbr
 
     bool new_dv; // New DV for this node that I haven't read yet?
 } nbr_t;
@@ -55,6 +55,9 @@ extern node_t self;
 
 // Create a new node with default values
 node_t new_node(int is_master);
+
+// Return the number of un-updated neighbors that [n] has
+int num_unupdated_nbrs(node_t* n);
 
 // Print results of neighbor search
 void print_neighbors();

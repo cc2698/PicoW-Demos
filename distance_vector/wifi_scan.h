@@ -25,6 +25,7 @@ typedef enum scan_type {
 
 // Non-ID scan targets
 enum {
+    DV_SCAN       = -3,
     NF_SCAN       = -2,
     ENABLE_AP     = -1,
     CONNECT_TO_AP = 0
