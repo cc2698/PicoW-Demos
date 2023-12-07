@@ -483,7 +483,7 @@ static PT_THREAD(protothread_udp_send(struct pt* pt))
 
 #ifdef PRINT_ON_SEND
         // Print formatted packet contents
-        print_cyan;
+        print_orange;
         printf("| Outgoing...\n");
         print_packet(buffer, send_buf);
         print_reset;
@@ -568,7 +568,11 @@ static PT_THREAD(protothread_udp_recv(struct pt* pt))
         }
 #else
         // Print formatted packet contents
-        print_cyan;
+        if (recv_buf.dest_id == self.ID && !is_ack) {
+            print_green;
+        } else {
+            print_cyan;
+        }
         printf("| Incoming...\n");
         print_packet(recv_data, recv_buf);
         if (is_ack) {

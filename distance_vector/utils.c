@@ -49,19 +49,41 @@ void sleep_ms_progress_bar(unsigned int bar_ms, unsigned int bar_len)
 void test_printf_colors()
 {
     print_bold;
-    printf("Bold ");
+    printf("Bold\n");
     print_red;
-    printf("Red ");
+    printf("Red\n");
     print_green;
-    printf("Green ");
+    printf("Green\n");
     print_yellow;
-    printf("Yellow ");
+    printf("Yellow\n");
     print_blue;
-    printf("Blue ");
+    printf("Blue\n");
     print_magenta;
-    printf("Magenta ");
+    printf("Magenta\n");
     print_cyan;
-    printf("Cyan ");
+    printf("Cyan\n");
+    print_orange;
+    printf("Orange\n");
+    print_reset;
+    printf("Normal\n");
+
+    print_green_bright;
+    printf("Bright Green\n");
+    print_orange_bright;
+    printf("Bright Orange\n");
+
+    print_bold;
+    print_green;
+    printf("Bold\n");
+    printf("Green\n");
+    print_reset;
+
+    print_bold;
+    print_orange;
+    printf("Bold\n");
+    printf("Orange\n");
+    print_reset;
+
     print_reset;
     printf("Normal\n");
 }
